@@ -1,0 +1,4 @@
+# Copie para terraform.tfvars (não versionado) e preencha.
+project_id = "todo-feira-xxxxx"
+# region = "us-east1"
+# zone   = "us-east1-b"

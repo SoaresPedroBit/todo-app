@@ -1,29 +1,29 @@
-# Etapa 1: Construção da aplicação
-FROM node:18-alpine as build
+# Etapa 1: construção da aplicação React
+FROM node:22-alpine AS build
 
-# Definindo o diretório de trabalho dentro do container
 WORKDIR /app
 
-# Copiando o package.json e o package-lock.json para instalar as dependências
+# Instala exatamente as dependências do package-lock.json
 COPY package*.json ./
+RUN npm ci --no-audit --no-fund
 
-# Instalando as dependências do projeto
-RUN npm install
+COPY public ./public
+COPY src ./src
 
-# Copiando todo o conteúdo da pasta do projeto para o container
-COPY . .
-
-# Construindo a aplicação para produção
+# Sem REACT_APP_API_URL, a interface chama a API por caminhos relativos
+# (/todos), no mesmo endereço servido por este Nginx.
 RUN npm run build
 
-# Etapa 2: Servindo a aplicação
-FROM nginx:alpine
+# Etapa 2: Nginx servindo a interface e encaminhando a API
+FROM nginx:1.27-alpine
 
-# Copiando o build da etapa anterior para o diretório padrão do Nginx
 COPY --from=build /app/build /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY proxy_api.conf /etc/nginx/proxy_api.conf
 
-# Expondo a porta 80 para acesso à aplicação
 EXPOSE 80
 
-# Comando para iniciar o Nginx e servir a aplicação
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
+
 CMD ["nginx", "-g", "daemon off;"]

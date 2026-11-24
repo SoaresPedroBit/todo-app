@@ -1,0 +1,51 @@
+# "Nuvem" local: LocalStack (emulação da AWS) + registro de imagens.
+# Sobe com: ./scripts/pipeline.sh subir-localstack
+#
+# - LocalStack Community 4.14 com versão FIXA: as versões 2026.x exigem token de
+#   conta. A edição Community não persiste dados ao reiniciar (recurso Pro), por
+#   isso o pipeline recria o que faltar e guarda segredos/backups também fora dele.
+# - ECR não existe na edição Community: o registry:2 cumpre esse papel.
+
+name: todo-nuvem
+
+services:
+  localstack:
+    image: localstack/localstack:4.14
+    container_name: todo-localstack
+    environment:
+      SERVICES: ec2,iam,sts,s3,secretsmanager,ssm,dynamodb,logs
+      AWS_DEFAULT_REGION: us-east-1
+      EAGER_SERVICE_LOADING: "1"
+    ports:
+      - "127.0.0.1:4566:4566" # API da "AWS" (só nesta máquina)
+    networks:
+      todo-servicos:
+        aliases: [localstack]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # Simula o Amazon ECR: o pipeline publica aqui (localhost:5001) e as VMs
+  # baixam pela rede interna (todo-registry:5000).
+  registry:
+    image: registry:2.8
+    container_name: todo-registry
+    ports:
+      - "127.0.0.1:5001:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+    networks:
+      todo-servicos:
+        aliases: [todo-registry]
+    restart: unless-stopped
+
+volumes:
+  registry-data:
+
+networks:
+  # Rede dos "serviços gerenciados" (equivale aos endpoints da AWS dentro da VPC)
+  todo-servicos:
+    name: todo-servicos

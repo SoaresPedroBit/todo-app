@@ -1,0 +1,21 @@
+# Terminação HTTPS da aplicação.
+# SITE_ADDRESS vem do Terraform (padrão: localhost). No ambiente LocalStack não
+# há domínio público para o Let's Encrypt, então o certificado é emitido pela
+# CA interna do Caddy. Para o navegador confiar, instale a CA raiz
+# (./scripts/pipeline.sh exportar-ca). Na GCP, TLS_DIRETIVA chega como um
+# comentário ("# ...") e o Caddy usa o padrão: certificado público e renovação automática.
+{$SITE_ADDRESS} {
+	{$TLS_DIRETIVA:tls internal}
+
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Tudo vai para o Nginx do frontend, que serve a interface e encaminha a API
+	reverse_proxy frontend:80
+}

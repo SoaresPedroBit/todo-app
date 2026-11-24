@@ -1,0 +1,101 @@
+# Pipeline de infraestrutura + entrega no LocalStack, ponta a ponta.
+#
+# Num runner limpo: sobe o LocalStack, cria a infraestrutura com Terraform,
+# constrói e implanta a aplicação, roda os critérios de aceite e DESATIVA tudo.
+# O relatório de aceite fica anexado à execução como evidência (ACE-01, ACE-06).
+#
+# O ambiente de demonstração da feira roda na máquina dos alunos com os mesmos
+# comandos (./scripts/pipeline.sh). Aqui, cada execução prova que ele é
+# reproduzível a partir do código.
+name: Infraestrutura e entrega (LocalStack)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      manter_ate_minutos:
+        description: "Manter o ambiente no ar por N minutos antes de desativar (0 = desativar logo)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: localstack
+  cancel-in-progress: false
+
+jobs:
+  ciclo:
+    name: Provisionar, implantar, aceitar e desativar
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Subir LocalStack e criar segredos
+        run: ./scripts/pipeline.sh subir-localstack
+
+      - name: Validar e planejar (Terraform plan)
+        run: ./scripts/pipeline.sh planejar
+
+      - name: Provisionar (Terraform apply)
+        run: ./scripts/pipeline.sh provisionar
+
+      - name: Implantar a aplicação (versão = SHA do commit)
+        run: ./scripts/pipeline.sh implantar
+
+      - name: Critérios de aceite
+        run: ./scripts/pipeline.sh aceite
+
+      - name: Plano idempotente (nenhuma alteração pendente)
+        run: |
+          ./scripts/pipeline.sh planejar | tee plano.txt
+          grep -q "No changes" plano.txt
+
+      - name: Ensaio de rollback (reimplantar a mesma versão sem reconstruir)
+        run: ./scripts/pipeline.sh implantar "$(git rev-parse --short=7 HEAD)"
+
+      - name: Manter no ar (opcional)
+        if: github.event.inputs.manter_ate_minutos != '' && github.event.inputs.manter_ate_minutos != '0'
+        run: sleep $(( ${{ github.event.inputs.manter_ate_minutos }} * 60 ))
+
+      - name: Status e logs (diagnóstico)
+        if: always()
+        run: |
+          ./scripts/pipeline.sh status || true
+          ./scripts/pipeline.sh logs-app todos 50 || true
+
+      - name: Desativar
+        if: always()
+        env:
+          CONFIRMAR: DESTRUIR
+        run: ./scripts/pipeline.sh desativar || true
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo "## Ciclo LocalStack"
+            echo "- Versão: \`$(git rev-parse --short=7 HEAD)\`"
+            echo "- Resultado: **${{ job.status }}**"
+            echo
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' .local/evidencias/aceite-*.log 2>/dev/null | grep -E '==>|\[OK\]|\[FALHA\]' || echo "(sem relatório)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Anexar evidências
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-aceite
+          path: .local/evidencias/
+          if-no-files-found: warn

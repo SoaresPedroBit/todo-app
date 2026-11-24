@@ -1,0 +1,62 @@
+# VM 2 / BANCO — somente o MongoDB.
+# Arquivo copiado para /opt/todo/compose.yaml pelo pipeline e executado por
+# /opt/todo/ops.sh. As variáveis vêm de /opt/todo/.env (gerado pelo ops.sh).
+
+name: todo-db
+
+services:
+  mongo:
+    image: ${MONGO_IMAGE:?imagem do banco não definida}
+    container_name: todo-mongo
+    # Cache fixo: a VM e2-micro da GCP tem só 1 GB de memória
+    command: ["mongod", "--wiredTigerCacheSizeGB", "${MONGO_CACHE_GB:-0.25}"]
+    # Publicado SOMENTE no IP privado da VM (nunca em 0.0.0.0). Além disso, o
+    # firewall da VPC só aceita a porta 27017 vindo da VM da aplicação.
+    ports:
+      - "${PRIVATE_IP:?IP privado não definido}:27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/mongo_root_password
+      MONGO_INITDB_DATABASE: todo-app
+      MONGO_APP_PASSWORD_FILE: /run/secrets/mongo_app_password
+    secrets:
+      - mongo_root_password
+      - mongo_app_password
+    volumes:
+      - mongo-data:/data/db
+      # Configuração das ferramentas de backup (mongodump/mongorestore) com a
+      # senha root, para que ela não apareça na linha de comando.
+      - /opt/todo/secrets/mongotools.yaml:/run/todo/mongotools.yaml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"quit(db.adminCommand('ping').ok ? 0 : 1)\""]
+      # O mongosh ocupa mais de 100 MB a cada verificação. Na VM de 1 GB, uma
+      # por minuto basta (a API também testa o banco em /health); só na subida
+      # a verificação é frequente.
+      interval: 60s
+      timeout: 20s
+      start_period: 60s
+      start_interval: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  mongo_root_password:
+    file: /opt/todo/secrets/mongo_root_password
+  mongo_app_password:
+    file: /opt/todo/secrets/mongo_app_password
+
+volumes:
+  # Volume nomeado apontando para o disco persistente separado (montado em
+  # /mnt/mongo-data pela inicialização da VM). Recriar o contêiner, atualizar a
+  # imagem ou até recriar a VM não apaga esse disco.
+  mongo-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/mongo-data/db

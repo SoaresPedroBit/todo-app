@@ -1,0 +1,60 @@
+# Validação contínua: roda em todo pull request e push.
+# Testes, lint dos scripts, Terraform (fmt/validate), Compose e um teste de
+# integração do fluxo completo com frontend + API + MongoDB.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    name: Validar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testes, shellcheck, Terraform e Compose
+        run: ./scripts/pipeline.sh validar
+      - name: Terraform e scripts da GCP
+        run: ./scripts/pipeline-gcp.sh validar
+
+  integracao:
+    name: Integração (Compose local)
+    needs: validar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Subir frontend + API + MongoDB
+        run: |
+          cp .env.example .env
+          docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Fluxo completo (cadastrar, listar, concluir, reabrir, excluir)
+        run: ./scripts/smoke-test.sh http://localhost --completo
+
+      - name: Persistência após recriar o contêiner do banco
+        run: |
+          curl -fsS -X POST -H 'Content-Type: application/json' -d '{"text":"persistencia-ci"}' http://localhost/todos >/dev/null
+          docker compose up -d --force-recreate --wait mongo backend
+          curl -fsS http://localhost/todos | grep -q persistencia-ci && echo "Tarefa preservada"
+
+      - name: Banco e API sem portas publicadas
+        run: |
+          ! nc -z -w 3 localhost 27017 && echo "27017 fechada"
+          ! nc -z -w 3 localhost 5000 && echo "5000 fechada"
+
+      - name: Logs em caso de falha
+        if: failure()
+        run: docker compose logs --tail 100
+
+      - name: Encerrar
+        if: always()
+        run: docker compose down -v

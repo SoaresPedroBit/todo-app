@@ -8,3 +8,15 @@ data/
 *.log
 .DS_Store
 Thumbs.db
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Ambiente local (segredos, backups exportados, evidências, cópias do estado)
+.local/
+infra/terraform/estado/
+tfplan

@@ -1,39 +1,59 @@
-version: '3.8'
+# Execução LOCAL (desenvolvimento e testes). A implantação na nuvem usa
+# deploy/app/compose.yaml e deploy/db/compose.yaml, um em cada VM.
+#
+# Antes de subir:  cp .env.example .env   (e troque as senhas)
+#
+# Diferenças em relação à versão original:
+# - o MongoDB e a API NÃO publicam portas; só o Nginx (porta 80) fica exposto
+#   e encaminha /todos para a API;
+# - credenciais vêm do .env, e a API usa um usuário próprio (todo_app);
+# - os dados ficam no volume nomeado "mongo-data" e sobrevivem a
+#   "docker compose down" (só "down -v" apaga);
+# - a API só sobe depois que o banco responde (healthcheck), e os serviços
+#   reiniciam sozinhos.
 
 services:
   frontend:
     build:
-      context: ./frontend  # Diretório do frontend
+      context: ./frontend
     ports:
-      - "80:80"  # Expõe a porta 80 do contêiner para a porta 80 do host
+      - "${HTTP_PORT:-80}:80"
     networks:
       - todo-net
     depends_on:
-      - backend  # Garante que o backend esteja rodando antes de subir o frontend
+      backend:
+        condition: service_started
+    restart: unless-stopped
 
   backend:
     build:
-      context: ./backend  # Diretório do backend
-    ports:
-      - "5000:5000"  # Expõe a porta 5000 do contêiner para a porta 5000 do host
+      context: ./backend
+    environment:
+      MONGO_URI: "mongodb://todo_app:${MONGO_APP_PASSWORD:?defina MONGO_APP_PASSWORD no .env}@mongo:27017/todo-app?authSource=todo-app"
     networks:
       - todo-net
     depends_on:
-      - mongo  # Garante que o MongoDB esteja rodando antes de iniciar o backend
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
 
   mongo:
     build:
-      context: ./banco-de-dados  # Diretório do backend
+      context: ./banco-de-dados
     container_name: mongo-todo
-    ports:
-      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASSWORD:?defina MONGO_ROOT_PASSWORD no .env}"
+      MONGO_INITDB_DATABASE: todo-app
+      MONGO_APP_PASSWORD: "${MONGO_APP_PASSWORD}"
+    volumes:
+      - mongo-data:/data/db
     networks:
       - todo-net
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=root
-      - MONGO_INITDB_ROOT_PASSWORD=rootpassword
-      - MONGO_INITDB_DATABASE=todo-app
+    restart: unless-stopped
 
+volumes:
+  mongo-data:
 
 networks:
   todo-net:

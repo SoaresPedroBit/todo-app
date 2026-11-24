@@ -1,0 +1,59 @@
+# VM 1 / APLICAÇÃO — Caddy (HTTPS) -> Nginx + React -> API Express.
+# Arquivo copiado para /opt/todo/compose.yaml pelo pipeline e executado por
+# /opt/todo/ops.sh. As variáveis vêm de /opt/todo/.env (gerado pelo ops.sh).
+
+name: todo-app
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # Única porta pública da solução. Obtém e renova o certificado HTTPS
+  # (Let's Encrypt) sozinho e redireciona HTTP -> HTTPS.
+  caddy:
+    image: caddy:2.8-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?endereço público não definido}
+      TLS_DIRETIVA: ${TLS_DIRETIVA:-tls internal}
+    volumes:
+      - /opt/todo/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # certificados (evita pedir de novo a cada reinício)
+      - caddy-config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  # Nginx: entrega a interface e encaminha /todos, /todos/:id e /health à API
+  frontend:
+    image: ${FRONTEND_IMAGE:?imagem do frontend não definida}
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    logging: *logging
+
+  backend:
+    image: ${BACKEND_IMAGE:?imagem do backend não definida}
+    environment:
+      # Arquivo com a URL de conexão (contém a senha do usuário todo_app)
+      MONGO_URI_FILE: /run/secrets/mongo_uri
+    secrets:
+      - mongo_uri
+    restart: unless-stopped
+    logging: *logging
+
+secrets:
+  mongo_uri:
+    file: /opt/todo/secrets/mongo_uri
+
+volumes:
+  caddy-data:
+  caddy-config:

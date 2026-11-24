@@ -1,68 +1,72 @@
 # ToDo App
 
-Aplicação de lista de tarefas utilizada nos laboratórios de Engenharia de Software do professor Laércio. O objetivo do laboratório é trabalhar a implantação de uma aplicação em nuvem, partindo de um sistema já desenvolvido.
+Aplicação de lista de tarefas usada nos laboratórios de Engenharia de Software do professor Laércio. Permite cadastrar, listar, concluir, reabrir e excluir tarefas.
 
-A aplicação permite cadastrar, listar, concluir, reabrir e excluir tarefas. Ela foi trazida do repositório `aula-uniamerica-infraestrutura-cloud` como base para este novo laboratório.
+Este repositório contém a aplicação **e** a implantação pedida no [escopo da Feira de Profissões](escopo.pdf) ([versão editável](docs/escopo.md)). A aplicação e o banco rodam em VMs distintas, a infraestrutura é descrita em **Terraform** e operada por pipelines. O ambiente da feira roda na **Google Cloud**; uma versão local na **AWS emulada pelo LocalStack** serve de plano B.
 
-## Escopo para a Feira de Profissões
+| Documento | Conteúdo |
+| --- | --- |
+| [docs/arquitetura.md](docs/arquitetura.md) | Arquitetura, decisões, segurança, backups, limitações e **custos** |
+| [docs/manual-alunos.md](docs/manual-alunos.md) | **Manual de operação**: subir, verificar, atualizar, recuperar e desligar |
+| [docs/relatorio-validacao.md](docs/relatorio-validacao.md) | Evidências dos critérios de aceite (ACE-01 a ACE-10) |
+| [docs/localstack/](docs/localstack/arquitetura.md) | Arquitetura, manual e relatório do ambiente local |
 
-O cenário da atividade apresenta o projeto desenvolvido por alunos do 3º período de Engenharia de Software e a contratação de um profissional para implantá-lo na nuvem para a feira.
+## Colocar no ar (Google Cloud)
 
-Consulte o [escopo em PDF](escopo.pdf) ou a [versão editável](docs/escopo.md), com arquitetura, automação, custos, entregáveis e critérios de aceite. O [fluxo proposto da aplicação](docs/assets/fluxo-aplicacao.pdf) também está disponível separadamente. Para gerar os PDFs, instale a dependência de documentação `reportlab` e execute `python scripts/render-escopo.py`.
+Pré-requisitos: Docker Desktop, Git Bash, Node.js 22, Google Cloud CLI autenticado e `infra/gcp/terraform.tfvars`. O passo a passo, com os resultados esperados, está no [manual](docs/manual-alunos.md).
 
-## Executar localmente
+```bash
+./scripts/pipeline-gcp.sh bootstrap      # uma vez: APIs e bucket do estado
+./scripts/pipeline-gcp.sh planejar       # mostra o que será criado
+./scripts/pipeline-gcp.sh provisionar    # cria as duas VMs
+./scripts/pipeline-gcp.sh implantar      # publica a aplicação com HTTPS
+./scripts/pipeline-gcp.sh aceite         # evidências
+./scripts/pipeline-gcp.sh desativar      # depois da feira
+```
 
-Pré-requisitos: Git e Docker com Docker Compose. No Windows, execute o Docker Desktop com containers Linux antes de iniciar.
+## Plano B: local (LocalStack)
 
-1. Abra um terminal na pasta deste repositório:
+Pré-requisitos: Docker Desktop, Git Bash e Node.js 22. As portas 80 e 443 precisam estar livres.
 
-   ```bash
-   cd todo-app
-   ```
+```bash
+./scripts/pipeline.sh ciclo-completo   # LocalStack + Terraform + implantação + testes de aceite
+```
 
-2. Construa as imagens e inicie os serviços:
+Depois abra **https://localhost**. Para o navegador confiar no certificado, rode `./scripts/pipeline.sh exportar-ca`. Todas as rotinas estão em `./scripts/pipeline.sh ajuda` e no [manual do ambiente local](docs/localstack/manual.md).
 
-   ```bash
-   docker compose up --build -d
-   ```
+```text
+Visitante --HTTPS--> VM 1 todo-app (10.10.1.10)        VM 2 todo-db (10.10.2.10, sem IP público)
+                     Caddy -> Nginx + React -> API --27017 (só da VM 1)--> MongoDB + volume EBS
+                                                                          backup a cada 6 h -> S3
+```
 
-3. Confira os serviços e acompanhe os logs:
+## Executar só a aplicação (desenvolvimento)
 
-   ```bash
-   docker compose ps
-   docker compose logs -f
-   ```
+Pré-requisitos: Git e Docker com Docker Compose.
 
-   Aguarde a mensagem `Conectado ao MongoDB` no backend. Use `Ctrl+C` para sair dos logs; os serviços continuam rodando.
+```bash
+cp .env.example .env              # troque as senhas
+docker compose up --build -d --wait
+```
 
-4. Acesse a aplicação em **http://localhost**. A API está em **http://localhost:5000/todos**.
+Acesse **http://localhost**. A API responde no mesmo endereço (`/todos`, `/health`); o Nginx encaminha as chamadas. O MongoDB e a API não publicam portas. Os dados ficam no volume `mongo-data`: `docker compose down` mantém os dados, e `down -v` apaga.
 
-5. Cadastre uma tarefa, clique no texto para concluir ou reabrir e use **Excluir** para removê-la. Atualize a página para conferir os dados retornados pela API.
-
-6. Ao terminar, pare os serviços:
-
-   ```bash
-   docker compose down
-   ```
-
-As portas 80, 5000 e 27017 precisam estar disponíveis na máquina. Caso seu ambiente use o executável legado, substitua `docker compose` por `docker-compose`.
+Testes: `cd frontend && npm test` · fluxo completo: `./scripts/smoke-test.sh http://localhost --completo`.
 
 ## Estrutura
 
-- `frontend/`: interface React, compilada e servida pelo Nginx.
-- `backend/`: API Node.js com Express e Mongoose.
-- `banco-de-dados/`: imagem MongoDB e script de criação dos dados iniciais.
-- `docker-compose.yaml`: execução dos três serviços na rede local `todo-net`.
+| Pasta | Conteúdo |
+| --- | --- |
+| `frontend/` | Interface React servida pelo Nginx, que também encaminha `/todos` e `/health` para a API |
+| `backend/` | API Node.js/Express + Mongoose (configuração por ambiente, `/health`, reconexão) |
+| `banco-de-dados/` | Imagem MongoDB 7, usuário da aplicação e lista de demonstração |
+| `infra/gcp/` | Infraestrutura como código da Google Cloud: rede, 2 VMs, discos, IAM, segredos e backups |
+| `infra/gcp-ci/` | Acesso do GitHub Actions à GCP por OIDC, sem chave (aplicado pelo dono do projeto) |
+| `infra/terraform/` | Infraestrutura como código: VPC, Security Groups, EC2, EBS, S3, IAM, Secrets (LocalStack) e as VMs |
+| `infra/localstack/` | LocalStack 4.14 + registro de imagens |
+| `infra/vm-image/` | Imagem das VMs (Docker-in-Docker + AWS CLI) |
+| `deploy/` | Arquivos de cada VM: Compose, Caddyfile e `ops.sh` (deploy, status, backup, restore…) |
+| `scripts/` | `pipeline-gcp.sh` (nuvem), `pipeline.sh` (local), `smoke-test.sh`, `verificar-isolamento.sh` |
+| `.github/workflows/` | `ci.yml` (validação), `localstack.yml` (ciclo completo local) e `gcp.yml` (plano, implantação, rollback e aceite na nuvem) |
 
-O navegador acessa o frontend e envia as operações para a API. A API consulta e atualiza o MongoDB.
-
-```text
-Navegador -> Frontend (porta 80)
-Navegador -> API Express (porta 5000) -> MongoDB (porta 27017)
-```
-
-## Base do laboratório de nuvem
-
-Esta importação mantém o código e a configuração de execução da aplicação original. O frontend utiliza `http://localhost:5000` para acessar a API, e a conexão do backend com o banco está definida em `backend/index.js`.
-
-O Compose atual utiliza credenciais de demonstração e não configura um volume nomeado para o MongoDB. Endereços dos serviços, configuração por ambiente, persistência, isolamento do banco e automação da infraestrutura serão tratados no desenho do laboratório de nuvem.
+Para gerar os PDFs do escopo, instale a dependência `reportlab` e execute `python scripts/render-escopo.py`.

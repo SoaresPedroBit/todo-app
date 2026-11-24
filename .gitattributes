@@ -1,2 +1,18 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Arquivos executados em Linux (VMs, contêineres e GitHub Actions) precisam de LF,
+# mesmo quando editados no Windows.
+*.sh      text eol=lf
+*.tftpl   text eol=lf
+*.tf      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.conf    text eol=lf
+*.js      text eol=lf
+Caddyfile text eol=lf
+Dockerfile text eol=lf
+
+*.pdf binary
+*.png binary
+*.ico binary
