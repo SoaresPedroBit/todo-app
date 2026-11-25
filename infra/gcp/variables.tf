@@ -86,3 +86,22 @@ variable "backup_retention_days" {
   type    = number
   default = 30
 }
+
+variable "environment" {
+  description = "Ambiente de destino (dev, homolog, prod)"
+  type        = string
+  default     = "dev"
+}
+
+variable "instance_name" {
+  description = "Prefixo do nome das instâncias"
+  type        = string
+  default     = "todo"
+}
+
+variable "instance_type" {
+  description = "Tipo de máquina das VMs na GCP"
+  type        = string
+  default     = "e2-micro"
+}
+

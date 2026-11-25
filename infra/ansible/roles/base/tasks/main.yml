@@ -72,3 +72,20 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: Atualizar pacotes do sistema operacional (quando update_os=true)
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+    lock_timeout: 300
+  when: update_os | default(false) | bool
+
+- name: Instalar pacotes adicionais solicitados na pipeline
+  ansible.builtin.apt:
+    name: "{{ extra_packages.split(',') | map('trim') | reject('equalto', '') | list }}"
+    state: present
+    update_cache: true
+    lock_timeout: 300
+  when:
+    - extra_packages is defined
+    - extra_packages | trim | length > 0
