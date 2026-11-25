@@ -200,8 +200,12 @@ ansible_playbook() {
   docker run --rm -v "$RAIZ_DOCKER:/work:ro" -v "$chaves:/chaves:ro" \
     -e CLOUDSDK_AUTH_ACCESS_TOKEN -e ANSIBLE_CONFIG=/work/infra/ansible/ansible.cfg \
     -e TODO_PROJETO="$PROJETO" -e TODO_ZONA="$ZONA" "$ANSIBLE_IMAGE" \
-    ansible-playbook /work/infra/ansible/configurar.yml "$@"
+    ansible-playbook /work/infra/ansible/configurar.yml \
+    -e "update_os=${UPDATE_OS:-false}" \
+    -e "extra_packages=${EXTRA_PACKAGES:-}" \
+    "$@"
 }
+
 
 #   preparar [--check]   ("--check" só mostra o que mudaria)
 cmd_preparar() {
@@ -265,7 +269,8 @@ cmd_implantar() {
     imagem_existe "$reg/frontend:$versao" && imagem_existe "$reg/backend:$versao" \
       || morrer "versão $versao não encontrada no registro (veja: versoes)"
   else
-    versao=$(versao_atual)
+    versao=${DOCKER_TAG:-$(versao_atual)}
+
     etapa "Construindo e publicando imagens ($versao)"
     gcloud auth print-access-token | tr -d '\r\n' \
       | docker login -u oauth2accesstoken --password-stdin "https://${REGIAO}-docker.pkg.dev" >/dev/null 2>&1 \

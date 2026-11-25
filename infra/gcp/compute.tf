@@ -18,8 +18,13 @@ locals {
 resource "google_compute_instance" "vm" {
   for_each                  = local.vms
   name                      = "todo-${each.key}"
-  machine_type              = each.value.tipo
+  machine_type              = var.instance_type
   allow_stopping_for_update = true
+
+  labels = {
+    environment   = var.environment
+    instance_name = var.instance_name
+  }
 
   boot_disk {
     initialize_params {

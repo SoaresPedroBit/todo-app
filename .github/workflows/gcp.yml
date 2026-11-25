@@ -1,23 +1,46 @@
-# Entrega e verificação na Google Cloud, por execução manual (aba Actions).
-#
-# Sem chave de conta de serviço: a identidade vem por OIDC (infra/gcp-ci).
-# Configuração do repositório:
-#   Variables: GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT, TODO_SSH_PUB
-#   Secrets:   TODO_SSH_KEY (chave privada de .local/gcp/ssh/id_ed25519)
 name: GCP
 
 on:
   workflow_dispatch:
     inputs:
       acao:
-        description: "O que executar"
+        description: "Ação da pipeline"
         type: choice
-        default: planejar
-        options: [planejar, implantar, rollback, aceite]
-      versao:
-        description: "Versão (só para rollback)"
+        default: provisionar_e_implantar
+        options:
+          - planejar
+          - provisionar_e_implantar
+          - rollback
+          - aceite
+      environment:
+        description: "Ambiente de destino (dev / homolog / prod)"
+        type: choice
+        default: dev
+        options: [dev, homolog, prod]
+      instance_name:
+        description: "Identificador/Prefixo das VMs"
+        type: string
+        default: "todo-pm04"
+      instance_type:
+        description: "Tipo da máquina na GCP (ex: e2-micro, e2-small)"
+        type: string
+        default: "e2-micro"
+      docker_image:
+        description: "Imagem/Serviço alvo (todo-app)"
+        type: string
+        default: "todo-app"
+      docker_tag:
+        description: "Tag/Versão das imagens Docker (vazio = SHA do commit)"
         required: false
         default: ""
+      update_os:
+        description: "Aplicar atualizações do SO via Ansible"
+        type: boolean
+        default: false
+      extra_packages:
+        description: "Pacotes adicionais (separados por vírgula)"
+        type: string
+        default: "curl,git,unzip"
 
 permissions:
   contents: read
@@ -29,10 +52,15 @@ concurrency:
 
 jobs:
   executar:
-    name: ${{ inputs.acao }}
+    name: ${{ inputs.acao }} (${{ inputs.environment }})
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CONFIRMAR: CRIAR
+      UPDATE_OS: ${{ inputs.update_os }}
+      EXTRA_PACKAGES: ${{ inputs.extra_packages }}
+      DOCKER_TAG: ${{ inputs.docker_tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,34 +72,41 @@ jobs:
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configuração local
+      - name: Configuração local e variáveis Terraform
         env:
           PROJETO: ${{ vars.GCP_PROJECT_ID }}
           CHAVE: ${{ secrets.TODO_SSH_KEY }}
           PUB: ${{ vars.TODO_SSH_PUB }}
         run: |
-          printf 'project_id = "%s"\n' "$PROJETO" > infra/gcp/terraform.tfvars
-          echo 'saida_internet_banco = false' > infra/gcp/nat.auto.tfvars
+          cat <<EOF > infra/gcp/terraform.tfvars
+          project_id    = "$PROJETO"
+          environment   = "${{ inputs.environment }}"
+          instance_name = "${{ inputs.instance_name }}"
+          instance_type = "${{ inputs.instance_type }}"
+          EOF
+          echo 'saida_internet_banco = true' > infra/gcp/nat.auto.tfvars
           install -d -m 700 .local/gcp/ssh
           (umask 077; printf '%s\n' "$CHAVE" > .local/gcp/ssh/id_ed25519)
           printf '%s\n' "$PUB" > .local/gcp/ssh/id_ed25519.pub
-
-      - name: Planejar (nada é alterado)
+#mudar para false depois
+      - name: 1. Terraform Plan
         run: |
           set -o pipefail
           ./scripts/pipeline-gcp.sh planejar | tee plano.txt
 
-      - name: Implantar (versão = SHA do commit)
-        if: inputs.acao == 'implantar'
+      - name: 2. Terraform Apply + Ansible (Provisionar e Configurar)
+        if: inputs.acao == 'provisionar_e_implantar'
+        run: ./scripts/pipeline-gcp.sh provisionar
+
+      - name: 3. Implantar Aplicação (Containers)
+        if: inputs.acao == 'provisionar_e_implantar'
         run: ./scripts/pipeline-gcp.sh implantar
 
       - name: Rollback
         if: inputs.acao == 'rollback'
-        env:
-          VERSAO: ${{ inputs.versao }}
         run: |
-          [[ $VERSAO =~ ^[A-Za-z0-9._-]+$ ]] || { echo "informe uma versão válida"; exit 1; }
-          ./scripts/pipeline-gcp.sh implantar "$VERSAO"
+          [[ "${{ inputs.docker_tag }}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Informe uma tag válida em docker_tag"; exit 1; }
+          ./scripts/pipeline-gcp.sh implantar "${{ inputs.docker_tag }}"
 
       - name: Critérios de aceite
         if: inputs.acao == 'aceite'
@@ -85,7 +120,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: evidencias-gcp-${{ inputs.acao }}
+          name: evidencias-gcp-${{ inputs.acao }}-${{ inputs.environment }}
           path: |
             plano.txt
             .local/evidencias/
