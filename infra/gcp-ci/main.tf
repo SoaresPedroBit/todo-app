@@ -87,6 +87,7 @@ resource "google_project_iam_member" "ci" {
     "roles/iap.tunnelResourceAccessor",
     "roles/secretmanager.viewer",
     "roles/secretmanager.secretAccessor",
+    "roles/storage.bucketViewer", # só metadados dos buckets, para o plan
   ])
   project = var.project_id
   role    = each.key
