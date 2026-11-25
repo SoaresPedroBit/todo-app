@@ -1,4 +1,4 @@
-# Relatório de validação · ToDo App (Google Cloud)
+/r# Relatório de validação · ToDo App (Google Cloud)
 
 Evidências dos critérios de aceite do [escopo](escopo.md), seção 16.
 **Data:** 24/11/2026 (horários em UTC). **Endereço:** https://34-73-148-18.sslip.io

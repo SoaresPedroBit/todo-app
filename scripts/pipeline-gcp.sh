@@ -130,7 +130,10 @@ cmd_validar() {
       -c 'terraform init -backend=false -input=false >/dev/null && terraform validate'
   done
   docker run --rm -v "$RAIZ_DOCKER:/mnt" -w /mnt koalaman/shellcheck:stable -x -S warning \
-    deploy/common.sh deploy/app/ops.sh deploy/db/ops.sh deploy/gcp/preparar-vm.sh scripts/pipeline-gcp.sh
+    deploy/common.sh deploy/app/ops.sh deploy/db/ops.sh infra/ansible/entrypoint.sh scripts/pipeline-gcp.sh
+  construir_ansible
+  docker run --rm -v "$RAIZ_DOCKER:/work:ro" -e ANSIBLE_CONFIG=/work/infra/ansible/ansible.cfg "$ANSIBLE_IMAGE" \
+    ansible-playbook --syntax-check /work/infra/ansible/configurar.yml
   ok "validado"
 }
 
@@ -186,18 +189,27 @@ Host todo-*
 EOF
 }
 
+# O Ansible roda em contêiner e entra nas VMs pelo IAP, com o token temporário do gcloud
+ANSIBLE_IMAGE=todo-ansible:local
+construir_ansible() { docker build -q -t "$ANSIBLE_IMAGE" infra/ansible >/dev/null; }
+ansible_playbook() {
+  local chaves
+  chaves=$(cd "$LOCAL/ssh" && { pwd -W 2>/dev/null || pwd; } | tr -d '\r')
+  CLOUDSDK_AUTH_ACCESS_TOKEN=$(gcloud auth print-access-token | tr -d '\r')
+  export CLOUDSDK_AUTH_ACCESS_TOKEN
+  docker run --rm -v "$RAIZ_DOCKER:/work:ro" -v "$chaves:/chaves:ro" \
+    -e CLOUDSDK_AUTH_ACCESS_TOKEN -e ANSIBLE_CONFIG=/work/infra/ansible/ansible.cfg \
+    -e TODO_PROJETO="$PROJETO" -e TODO_ZONA="$ZONA" "$ANSIBLE_IMAGE" \
+    ansible-playbook /work/infra/ansible/configurar.yml "$@"
+}
+
+#   preparar [--check]   ("--check" só mostra o que mudaria)
 cmd_preparar() {
-  etapa "Preparando as VMs (Docker, swap, disco de dados)"
+  etapa "Configurando as VMs com Ansible (Docker, swap, disco de dados)"
+  preparar_local
   gerar_ssh_config
-  local papel i
-  for papel in app db; do
-    for i in $(seq 1 20); do
-      vm "$papel" true </dev/null >/dev/null 2>&1 && break
-      (( i < 20 )) || morrer "sem SSH em todo-$papel (confira a permissão de IAP da sua conta)"
-      sleep 10
-    done
-    vm "$papel" "sudo bash -s -- $papel" <deploy/gcp/preparar-vm.sh
-  done
+  construir_ansible
+  ansible_playbook "$@"
 }
 
 # Arquivos de operação e variáveis da instância
@@ -481,7 +493,7 @@ Uso: ./scripts/pipeline-gcp.sh <rotina> [argumentos]
   validar                 terraform fmt/validate e shellcheck
   planejar                terraform plan
   provisionar             aplica o plano exibido e prepara as VMs (pede CRIAR)
-  preparar                refaz a preparação das VMs
+  preparar [--check]      configura as VMs com Ansible (--check só simula)
   implantar [versao]      constrói, publica e implanta; com versao = rollback
   versoes                 versões disponíveis e histórico
   status                  estado das duas VMs
@@ -510,7 +522,7 @@ case $rotina in
   validar)              cmd_validar ;;
   planejar)             cmd_planejar ;;
   provisionar)          cmd_provisionar ;;
-  preparar)             cmd_preparar ;;
+  preparar)             cmd_preparar "$@" ;;
   implantar)            cmd_implantar "$@" ;;
   versoes)              cmd_versoes ;;
   status)               ops app status; ops db status ;;

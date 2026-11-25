@@ -1,0 +1,20 @@
+# As VMs são alcançadas pelo nome, por dentro do IAP (sem IP e sem porta 22 aberta).
+# Projeto e zona vêm do pipeline por variáveis de ambiente.
+all:
+  children:
+    aplicacao:
+      hosts:
+        todo-app:
+    banco:
+      hosts:
+        todo-db:
+  vars:
+    ansible_user: todo
+    ansible_ssh_private_key_file: /root/.ssh/id_ed25519
+    ansible_ssh_common_args: >-
+      -o IdentitiesOnly=yes
+      -o StrictHostKeyChecking=accept-new
+      -o ConnectTimeout=40
+      -o ProxyCommand="gcloud compute start-iap-tunnel %h 22 --listen-on-stdin
+      --project={{ lookup('env', 'TODO_PROJETO') }}
+      --zone={{ lookup('env', 'TODO_ZONA') }} --verbosity=error"

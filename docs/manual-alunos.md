@@ -20,7 +20,7 @@ Confira com `./scripts/pipeline-gcp.sh verificar`.
 | --- | --- | --- |
 | 1 | `./scripts/pipeline-gcp.sh bootstrap` (digite PREPARAR) | `[OK] versionamento ligado` |
 | 2 | `./scripts/pipeline-gcp.sh planejar` | `Plan: 26 to add, 0 to change, 0 to destroy` |
-| 3 | `./scripts/pipeline-gcp.sh provisionar` (digite CRIAR) | `VM app pronta`, `VM db pronta` |
+| 3 | `./scripts/pipeline-gcp.sh provisionar` (digite CRIAR) | `Apply complete!` e, no fim do Ansible, `failed=0` nas duas VMs |
 | 4 | `./scripts/pipeline-gcp.sh implantar` | `[OK] Versão … no ar em https://…` |
 | 5 | `./scripts/pipeline-gcp.sh nat desligar` | `Apply complete!` |
 | 6 | `./scripts/pipeline-gcp.sh aceite` | `[OK] aceite concluído` |
@@ -43,6 +43,7 @@ Confira com `./scripts/pipeline-gcp.sh verificar`.
 | Logs do banco | `./scripts/pipeline-gcp.sh logs-banco 100` |
 | Saúde | abrir `<endereço>/health` → `{"status":"ok","api":"ok","banco":"ok"}` |
 | Provar o isolamento do banco | `./scripts/pipeline-gcp.sh verificar-isolamento` |
+| Ver se as VMs fogem da configuração | `./scripts/pipeline-gcp.sh preparar --check` (esperado: `changed=0`) |
 
 | Sintoma | Causa provável | O que fazer |
 | --- | --- | --- |
@@ -52,6 +53,7 @@ Confira com `./scripts/pipeline-gcp.sh verificar`.
 | Só a aplicação falha | Contêiner travado | `reiniciar-app` |
 | "sem SSH" ou pedido de login | Sessão do gcloud vencida | `gcloud auth login` |
 | Detalhe de erro do SSH | Túnel IAP | veja `.local/gcp/ssh/iap.log` (um erro ao **fechar** o túnel no Windows é normal) |
+| Ansible pede pacote e falha no banco | NAT desligado | `nat ligar`, `preparar`, `nat desligar` |
 | `Plan` mostra mudança inesperada | Arquivos da seção 0 ausentes | não aplique; chame o responsável |
 
 ## 4. Atualizar e voltar versão

@@ -2,7 +2,7 @@
 
 Aplicação de lista de tarefas usada nos laboratórios de Engenharia de Software do professor Laércio. Permite cadastrar, listar, concluir, reabrir e excluir tarefas.
 
-Este repositório contém a aplicação **e** a implantação pedida no [escopo da Feira de Profissões](escopo.pdf) ([versão editável](docs/escopo.md)). A aplicação e o banco rodam em VMs distintas, a infraestrutura é descrita em **Terraform** e operada por pipelines. O ambiente da feira roda na **Google Cloud**; uma versão local na **AWS emulada pelo LocalStack** serve de plano B.
+Este repositório contém a aplicação **e** a implantação pedida no [escopo da Feira de Profissões](escopo.pdf) ([versão editável](docs/escopo.md)). A aplicação e o banco rodam em VMs distintas, a infraestrutura é criada com **Terraform**, configurada com **Ansible** e operada por pipelines. O ambiente da feira roda na **Google Cloud**; uma versão local na **AWS emulada pelo LocalStack** serve de plano B.
 
 | Documento | Conteúdo |
 | --- | --- |
@@ -18,7 +18,7 @@ Pré-requisitos: Docker Desktop, Git Bash, Node.js 22, Google Cloud CLI autentic
 ```bash
 ./scripts/pipeline-gcp.sh bootstrap      # uma vez: APIs e bucket do estado
 ./scripts/pipeline-gcp.sh planejar       # mostra o que será criado
-./scripts/pipeline-gcp.sh provisionar    # cria as duas VMs
+./scripts/pipeline-gcp.sh provisionar    # cria as duas VMs e as configura com Ansible
 ./scripts/pipeline-gcp.sh implantar      # publica a aplicação com HTTPS
 ./scripts/pipeline-gcp.sh aceite         # evidências
 ./scripts/pipeline-gcp.sh desativar      # depois da feira
@@ -61,6 +61,7 @@ Testes: `cd frontend && npm test` · fluxo completo: `./scripts/smoke-test.sh ht
 | `backend/` | API Node.js/Express + Mongoose (configuração por ambiente, `/health`, reconexão) |
 | `banco-de-dados/` | Imagem MongoDB 7, usuário da aplicação e lista de demonstração |
 | `infra/gcp/` | Infraestrutura como código da Google Cloud: rede, 2 VMs, discos, IAM, segredos e backups |
+| `infra/ansible/` | Configuração das VMs da nuvem: Docker, swap, disco de dados e serviço de boot |
 | `infra/gcp-ci/` | Acesso do GitHub Actions à GCP por OIDC, sem chave (aplicado pelo dono do projeto) |
 | `infra/terraform/` | Infraestrutura como código: VPC, Security Groups, EC2, EBS, S3, IAM, Secrets (LocalStack) e as VMs |
 | `infra/localstack/` | LocalStack 4.14 + registro de imagens |

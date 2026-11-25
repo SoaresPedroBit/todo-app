@@ -1,0 +1,30 @@
+# Configuração das duas VMs. Idempotente: rodar de novo não altera o que está pronto.
+# O Terraform cria as VMs; este playbook as configura; o ops.sh implanta a aplicação.
+- name: Configuração comum
+  hosts: all
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Aguardar o SSH da VM
+      ansible.builtin.wait_for_connection:
+        timeout: 400
+        sleep: 10
+
+    - name: Aguardar o fim do cloud-init (primeiro boot)
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      check_mode: false # leitura: roda também na simulação
+      failed_when: false
+
+    - name: Coletar informações da VM
+      ansible.builtin.setup:
+        gather_subset: ["!all", "min", "mounts"]
+  roles:
+    - base
+
+- name: VM do banco
+  hosts: banco
+  become: true
+  gather_facts: false
+  roles:
+    - banco

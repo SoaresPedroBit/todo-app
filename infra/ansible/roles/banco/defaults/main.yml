@@ -1,0 +1,3 @@
+# Nome estável dado pela GCP ao disco anexado como "mongo-data" (infra/gcp/storage.tf)
+disco_dados: /dev/disk/by-id/google-mongo-data
+ponto_montagem: /mnt/mongo-data

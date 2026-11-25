@@ -1,0 +1,13 @@
+[Unit]
+Description=ToDo App: religa os servicos apos o boot
+Wants=network-online.target
+After=docker.service network-online.target
+Requires=docker.service
+ConditionPathExists=/opt/todo/.env
+
+[Service]
+Type=oneshot
+ExecStart=/opt/todo/ops.sh boot
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,65 @@
+- name: Aguardar o disco de dados
+  ansible.builtin.wait_for:
+    path: "{{ disco_dados }}"
+    timeout: 300
+
+# "blkid -p" devolve 0 (tem sistema de arquivos) ou 2 (vazio). Qualquer outro
+# resultado interrompe: na dúvida, nunca formatar.
+- name: Examinar o disco de dados
+  ansible.builtin.command: "blkid -p {{ disco_dados }}"
+  register: exame
+  changed_when: false
+  check_mode: false # leitura: roda também na simulação
+  failed_when: exame.rc not in [0, 2]
+
+- name: Formatar o disco, somente se estiver vazio
+  ansible.builtin.command: "mkfs.ext4 -q -L todo-mongo {{ disco_dados }}"
+  when: exame.rc == 2
+  changed_when: true
+
+- name: Ler o identificador do disco
+  ansible.builtin.command: "blkid -s UUID -o value {{ disco_dados }}"
+  register: uuid_disco
+  changed_when: false
+  check_mode: false # leitura: roda também na simulação
+  failed_when: uuid_disco.stdout | length == 0
+
+- name: Montar o disco de dados
+  ansible.posix.mount:
+    path: "{{ ponto_montagem }}"
+    src: "UUID={{ uuid_disco.stdout }}"
+    fstype: ext4
+    opts: defaults,nofail
+    passno: "2"
+    state: mounted
+
+- name: Criar a pasta de ajustes do serviço Docker
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: "0755"
+
+# Evita um banco vazio no disco errado
+- name: Impedir o Docker de subir sem o disco de dados
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker.service.d/disco.conf
+    content: |
+      [Unit]
+      RequiresMountsFor={{ ponto_montagem }}
+    mode: "0644"
+  notify: Recarregar o systemd
+
+- name: Instalar o serviço que religa o banco após o boot
+  ansible.builtin.template:
+    src: todo-boot.service.j2
+    dest: /etc/systemd/system/todo-boot.service
+    mode: "0644"
+  notify: Recarregar o systemd
+
+- name: Aplicar as mudanças do systemd agora
+  ansible.builtin.meta: flush_handlers
+
+- name: Ativar o serviço de boot
+  ansible.builtin.service:
+    name: todo-boot
+    enabled: true

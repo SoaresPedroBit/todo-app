@@ -1,0 +1,74 @@
+# --- Swap: a e2-micro tem 1 GB de memória -------------------------------------
+- name: Reservar o arquivo de swap (1 GB)
+  ansible.builtin.command:
+    cmd: fallocate -l 1G /swapfile
+    creates: /swapfile
+
+- name: Restringir o arquivo de swap
+  ansible.builtin.file:
+    path: /swapfile
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Verificar o swap em uso
+  ansible.builtin.command: swapon --show=NAME --noheadings
+  register: swap_ativo
+  changed_when: false
+  check_mode: false # leitura: roda também na simulação
+
+- name: Ativar o swap
+  ansible.builtin.shell: |
+    set -e
+    blkid -p -t TYPE=swap /swapfile >/dev/null 2>&1 || mkswap -q /swapfile
+    swapon /swapfile
+  when: "'/swapfile' not in swap_ativo.stdout_lines"
+  changed_when: true
+
+- name: Ativar o swap em todo boot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^/swapfile\s'
+    line: /swapfile none swap sw 0 0
+
+# --- Pacotes -------------------------------------------------------------------
+- name: Listar os pacotes instalados
+  ansible.builtin.package_facts:
+    manager: apt
+
+# Só acessa a internet se faltar algo: com o NAT desligado, a VM do banco não a alcança
+- name: Instalar Docker e utilitários
+  ansible.builtin.apt:
+    name: "{{ faltando }}"
+    state: present
+    update_cache: true
+    install_recommends: true
+    lock_timeout: 300
+  vars:
+    necessarios:
+      - docker.io
+      - docker-compose-v2
+      - jq
+      - cron
+      - curl
+      - netcat-openbsd
+      - iptables
+    faltando: "{{ necessarios | difference(ansible_facts.packages.keys() | list) }}"
+  when: faltando | length > 0
+
+- name: Manter Docker e cron ligados
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - docker
+    - cron
+
+- name: Criar a pasta de operação
+  ansible.builtin.file:
+    path: /opt/todo
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
