@@ -1,36 +1,39 @@
-/r# Relatório de validação · ToDo App (Google Cloud)
+# Relatório de validação · ToDo App (Google Cloud)
 
 Evidências dos critérios de aceite do [escopo](escopo.md), seção 16.
-**Data:** 24/11/2026 (horários em UTC). **Endereço:** https://34-73-148-18.sslip.io
-**Código:** commit base `4814004` com alterações ainda não commitadas (versões `4814004-local…`).
+**Datas:** 24 e 25/11/2026 (horários em UTC). **Endereço:** https://34-73-148-18.sslip.io
+**Código:** [SoaresPedroBit/todo-app](https://github.com/SoaresPedroBit/todo-app), ramo `main`. Os testes de 24/11 usaram versões `4814004-local…`, anteriores ao commit.
 O relatório do ambiente local está em [localstack/relatorio-validacao.md](localstack/relatorio-validacao.md).
 
-Os registros completos ficam em `.local/evidencias/aceite-gcp-<data>.log`, gerados por `./scripts/pipeline-gcp.sh aceite`.
+Os registros completos ficam em `.local/evidencias/` (não versionado) e, nas execuções do GitHub, como artefato na aba Actions.
 
 ## Resumo
 
 | Critério | Resultado | Evidência ou pendência |
 | --- | --- | --- |
-| ACE-01 · Reprodução | ⚠️ parcial | Criado do zero **uma vez** pelo código (26 recursos); plano seguinte *No changes*. Falta destruir e recriar. |
+| ACE-01 · Reprodução | ✅ | Criado do zero pelo código **duas vezes**, em projetos diferentes (26 recursos cada); pré-requisitos e parâmetros no [manual](manual-alunos.md). |
 | ACE-02 · Duas VMs | ✅ | `todo-app` e `todo-db`, `e2-micro`; MongoDB só na segunda. |
 | ACE-03 · Isolamento | ✅ | 8 verificações, abaixo. |
 | ACE-04 · Aplicação pública | ⚠️ quase | Fluxo completo por HTTPS automatizado. Em celular, a equipe informou que funcionou; **faltam os prints** e a confirmação do fluxo completo em 4G. |
 | ACE-05 · Persistência | ✅ | Recriação do contêiner, reinício da VM e implantação de versão com outra identificação. |
-| ACE-06 · Automação | ⏳ | Plano, criação, implantação, versão identificada e rollback executados **da máquina da equipe**. Workflows ainda **não executados no GitHub**. |
-| ACE-07 · Recuperação | ✅ | Backup no Cloud Storage e restauração isolada. Agendamento de 6 h instalado e o mesmo comando executado à mão; **conferir as execuções automáticas nos próximos dias**. |
-| ACE-08 · Operação | ⚠️ quase | Saúde, logs, reinício, pausa e retomada testados; credenciais ausentes. **`desativar` ainda não executado na GCP.** |
-| ACE-09 · Custos | ✅ | [arquitetura.md, seção 8](arquitetura.md#8-custos-ace-09), com preços do catálogo oficial em 24/11/2026. Comparar com o faturamento real após o evento. |
+| ACE-06 · Automação | ✅ | No GitHub: validação, ciclo local, plano, implantação (versão = commit), rollback e aceite. Criação e desativação na GCP executadas pelo pipeline, da máquina da equipe. |
+| ACE-07 · Recuperação | ✅ | Backups automáticos de 25/11 às 00, 06, 12 e 18 h, todos no horário; restauração isolada e restauração real testadas. |
+| ACE-08 · Operação | ✅ | Saúde, logs, reinícios, pausa, retomada e `desativar` executados; credenciais ausentes do código e dos registros. |
+| ACE-09 · Custos | ✅ | [arquitetura.md, seção 9](arquitetura.md#9-custos-ace-09), com preços do catálogo oficial em 24/11/2026. Comparar com o faturamento real após o evento. |
 | ACE-10 · Transferência | ⏳ | [Manual](manual-alunos.md) pronto; falta o ensaio conduzido pelos alunos (seção 7 do manual). |
 
 ## Execuções do aceite
 
-| Início | Resultado | Observação |
-| --- | --- | --- |
-| 21:29 | Aprovado | Restauração de teste levou 100 s: primeiro sinal do problema abaixo |
-| 22:09 | **Reprovado** | A VM do banco parou de responder durante a restauração de teste |
-| 22:35 | Aprovado | Depois da correção; restauração de teste em 16 s |
+| Início | Onde | Resultado | Observação |
+| --- | --- | --- | --- |
+| 24/11 21:29 | Máquina da equipe | Aprovado | Restauração de teste levou 100 s: primeiro sinal do problema abaixo |
+| 24/11 22:09 | Máquina da equipe | **Reprovado** | A VM do banco parou de responder durante a restauração de teste |
+| 24/11 22:35 | Máquina da equipe | Aprovado | Depois da correção 1; restauração de teste em 16 s |
+| 25/11 21:18 | GitHub Actions | **Reprovado** | Falha 2, abaixo |
+| 25/11 21:28 | GitHub Actions | Aprovado | Depois da correção 2; restauração de teste em cerca de 60 s |
+| 25/11 22:10 | Projeto temporário | Aprovado | Ambiente criado do zero, configurado com Ansible |
 
-### Falha encontrada e corrigida
+### Falha 1: memória da VM do banco (corrigida)
 
 **Sintoma:** na VM do banco (1 GB), uso de CPU acima de 80%, centenas de MB/min de leitura e escrita no disco de sistema e SSH sem resposta. O `/health` da aplicação continuou respondendo.
 
@@ -39,6 +42,48 @@ Os registros completos ficam em `.local/evidencias/aceite-gcp-<data>.log`, gerad
 **Correção:** healthcheck a cada 60 s (frequente só na subida) e desligado no contêiner de teste, que passou a ser verificado pela porta. Em repouso, a CPU da VM do banco caiu de cerca de 40% para 1% a 2%.
 
 **Recuperação:** a VM foi desligada e ligada; nenhuma tarefa foi perdida nesse reinício.
+
+### Falha 2: implantação logo após queda do banco (corrigida)
+
+**Sintoma:** `container todo-app-backend-1 is unhealthy` ao reimplantar logo após reiniciar a VM do banco.
+
+**Causa:** a API já respondia, mas o Docker ainda guardava o resultado da checagem anterior, e o `up --wait` falhou na hora.
+
+**Correção:** o `ops.sh` espera até um minuto a checagem se recuperar antes de implantar.
+
+## Execuções no GitHub
+
+| Workflow | Resultado | Execução |
+| --- | --- | --- |
+| CI (validação, integração) | Aprovado | [45710600792](https://github.com/SoaresPedroBit/todo-app/actions/runs/45710600792) |
+| Ciclo local (LocalStack) | Aprovado | [45710600829](https://github.com/SoaresPedroBit/todo-app/actions/runs/45710600829) |
+| GCP · planejar | Aprovado na 2ª tentativa (*No changes*) | [45604931988](https://github.com/SoaresPedroBit/todo-app/actions/runs/45604931988) |
+| GCP · rollback | Aprovado | [45704028562](https://github.com/SoaresPedroBit/todo-app/actions/runs/45704028562) |
+| GCP · implantar `d058a58` | Aprovado | [45704257404](https://github.com/SoaresPedroBit/todo-app/actions/runs/45704257404) |
+| GCP · aceite | Aprovado na 2ª tentativa | [45704640419](https://github.com/SoaresPedroBit/todo-app/actions/runs/45704640419) |
+
+A 1ª tentativa de `planejar` falhou por falta de permissão para ler metadados de buckets. Um disparo de rollback falhou por queda de internet e foi refeito.
+
+## Ciclo completo em projeto temporário (25/11, 21:50 a 22:21)
+
+Projeto criado só para o teste, sem tocar no ambiente da feira.
+
+| Etapa | Resultado |
+| --- | --- |
+| `provisionar` | 26 recursos criados; Ansible com `failed=0` nas duas VMs |
+| `preparar`, segunda vez | `changed=0`: idempotente |
+| `implantar` | Aplicação no ar com HTTPS |
+| `nat desligar` e `preparar`, terceira vez | 2 recursos removidos; `changed=0` sem internet no banco |
+| `limpar-lista` | 4 tarefas → 3; a tarefa de visitante saiu |
+| `restaurar` (na produção desse ambiente) | 3 → 4; a tarefa de visitante voltou |
+| `limpar-lista` sem a palavra de confirmação | Recusado |
+| `reiniciar-banco`, `reiniciar-app`, `status` | Serviços saudáveis |
+| `aceite` | Aprovado |
+| `desativar` | Backup final copiado; 24 recursos destruídos (os 26 menos os 2 do NAT) |
+
+**Inventário após `desativar`:** 0 VMs, discos, IPs, roteadores, regras, segredos, repositórios e contas de serviço. Restou só o bucket do estado, removido com a exclusão do projeto.
+
+No ambiente da feira, `preparar --check` mostrou `changed=0`: o Ansible descreve exatamente o que está em execução, sem tê-lo alterado.
 
 ## Detalhes
 
@@ -81,7 +126,7 @@ Tarefas na produção agora:    2 (não alterada)
 [22:41:05] Restauração de teste OK; contêiner temporário removido
 ```
 
-A restauração **na produção** (`restaurar`) não foi executada na GCP; o mesmo código foi testado no ambiente local.
+A restauração real (`restaurar`) foi executada no projeto temporário (acima), não no ambiente da feira.
 
 ### ACE-08 · Pausa e retomada
 
@@ -89,13 +134,12 @@ A restauração **na produção** (`restaurar`) não foi executada na GCP; o mes
 
 ### Validação de código
 
-`terraform fmt` e `validate` (`infra/gcp` e `infra/gcp-ci`), shellcheck e actionlint sem erros. Os scripts de operação, compartilhados com o ambiente local, foram reimplantados no LocalStack: 24 de 24 verificações e dados idênticos.
+`terraform fmt` e `validate` (`infra/gcp` e `infra/gcp-ci`), shellcheck e `ansible-playbook --syntax-check` sem erros, no CI; actionlint sem erros, localmente. Os scripts de operação, compartilhados com o ambiente local, foram reimplantados no LocalStack: 24 de 24 verificações e dados idênticos.
 
 ## Pendências
 
-1. Prints do fluxo em celular (ACE-04).
-2. Execução dos workflows no GitHub (ACE-06).
-3. Destruir e recriar, incluindo `desativar` (ACE-01, ACE-08). Muda o IP: fazer em projeto temporário ou após a feira.
-4. Ensaio dos alunos (ACE-10).
-5. Conferir backups automáticos e faturamento nos próximos dias.
-6. Registrar os responsáveis pelos acessos (escopo, seção 15): conta da nuvem, repositório e operação na feira.
+1. Prints do fluxo completo em celular, em 4G (ACE-04).
+2. Ensaio conduzido pelos alunos (ACE-10).
+3. Dados da organização e responsáveis pelos acessos ([arquitetura.md, seção 8](arquitetura.md#8-limitações-e-premissas)).
+4. Conferir o faturamento real e fazer o encerramento depois da feira.
+5. Sem teste de carga; a margem de memória das VMs é pequena.
