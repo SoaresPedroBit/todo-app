@@ -62,6 +62,13 @@ EOF
   log "Preparando imagens"
   baixar_imagens
 
+  # Depois de uma queda do banco, a API já responde mas o Docker ainda a marca como
+  # "unhealthy" até a próxima checagem, e o "up --wait" falharia na hora.
+  for _ in $(seq 1 12); do
+    docker ps --filter "name=todo-app-" --filter health=unhealthy -q | grep -q . || break
+    sleep 5
+  done
+
   log "Subindo a aplicação"
   "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240
   aguardar_saude
