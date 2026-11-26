@@ -190,7 +190,7 @@ Medido em repouso, após o aceite. A margem é pequena: um healthcheck pesado ch
 - A cota é da conta de faturamento: outro projeto com `e2-micro`, disco ou IP a divide.
 - O valor final é cobrado em reais, pela cotação da Google e com impostos.
 
-**Proteção:** orçamento de R$ 5,50/mês (cerca de US$ 1) para o projeto, com avisos em 20%, 50% e 100% do gasto e quando a previsão do mês passa de 100%. Ele avisa, mas não bloqueia.
+**Proteção:** orçamento de R$ 1/mês para o projeto, com avisos em 20%, 50% e 100% do gasto e quando a previsão do mês passa de 100%. Ele avisa, mas não bloqueia.
 
 **Dados e cópias:** disco de dados de 10 GB; backups por 30 dias no bucket, 5 cópias no disco e cópia em `.local/backups/`. Depois de `desativar`, só a cópia local permanece.
 
