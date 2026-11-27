@@ -97,8 +97,12 @@ jobs:
           instance_name = "$NOME"
           instance_type = "$TIPO"
           EOF
-          # O NAT (saída de internet do banco) só existe quando há pacote para instalar
-          if [[ $UPDATE_OS == true || -n $EXTRA_PACKAGES ]]; then nat=true; else nat=false; fi
+          # O NAT (saída de internet do banco) só existe quando há pacote para instalar.
+          # Na criação do zero (VM do banco ainda não existe) ele também liga: a VM
+          # nova precisa baixar o Docker. Se a consulta falhar, liga por segurança.
+          db=$(gcloud compute instances list --project="$PROJETO" --filter='name=todo-db' --format='value(name)' 2>/dev/null || true)
+          if [[ $UPDATE_OS == true || -n $EXTRA_PACKAGES || -z $db ]]; then nat=true; else nat=false; fi
+          echo "NAT do banco: $nat (VM do banco: ${db:-ainda não existe})"
           echo "saida_internet_banco = $nat" > infra/gcp/nat.auto.tfvars
           install -d -m 700 .local/gcp/ssh
           (umask 077; printf '%s\n' "$CHAVE" > .local/gcp/ssh/id_ed25519)
