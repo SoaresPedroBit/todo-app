@@ -143,7 +143,16 @@ A restauração real (`restaurar`) foi executada no projeto temporário (acima),
 3. Dados da organização e responsáveis pelos acessos ([arquitetura.md, seção 8](arquitetura.md#8-limitações-e-premissas)).
 4. Conferir o faturamento real e fazer o encerramento depois da feira.
 5. Sem teste de carga; a margem de memória das VMs é pequena.
-6. Criação do zero (Cenário 1) e troca de `instance_type` (Cenário 2) **pelo GitHub**: o código está pronto, falta aplicar as novas permissões da pipeline (`infra/gcp-ci`) e executar.
+6. Criação do zero (Cenário 1) **pelo GitHub**: exige `desativar` antes (os dados e a URL mudam); fica para depois da feira.
+
+## Cenário 2: troca do tipo das VMs pelo GitHub (27/11)
+
+| Execução | Mudança | Resultado | Site fora do ar |
+| --- | --- | --- | --- |
+| [46074246440](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074246440) | `e2-micro` → `e2-small` | 2 VMs alteradas no lugar; Ansible `failed=0`; versão `bacd44f` implantada | cerca de 1,5 min |
+| [46074985970](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074985970) | `e2-small` → `e2-micro` | 2 VMs alteradas no lugar; Ansible `changed=0` nas duas | cerca de 2 min |
+
+O Terraform desliga, troca o tipo e religa cada VM (`allow_stopping_for_update`); disco, IP e dados ficam. Medido com uma consulta ao `/health` a cada 5 s. As tarefas cadastradas foram as mesmas antes e depois.
 
 ## Implantação pelo Ansible (27/11)
 
