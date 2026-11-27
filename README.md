@@ -9,6 +9,7 @@ Este repositório contém a aplicação **e** a implantação pedida no [escopo 
 | [docs/arquitetura.md](docs/arquitetura.md) | Arquitetura, decisões, segurança, backups, limitações e **custos** |
 | [docs/manual-alunos.md](docs/manual-alunos.md) | **Manual de operação**: subir, verificar, atualizar, recuperar e desligar |
 | [docs/relatorio-validacao.md](docs/relatorio-validacao.md) | Evidências dos critérios de aceite (ACE-01 a ACE-10) |
+| [evidencias/](evidencias/README.md) | **Evidências do PM-04**: cenários 1, 2 e 3 e validação da demanda |
 | [docs/localstack/](docs/localstack/arquitetura.md) | Arquitetura, manual e relatório do ambiente local |
 
 ## Colocar no ar (Google Cloud)
