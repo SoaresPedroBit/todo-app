@@ -11,7 +11,7 @@
 
 | Parâmetro | Antes | Nesta execução | Efeito |
 | --- | --- | --- | --- |
-| acao | — | `provisionar_e_implantar` | |
+| acao | (nenhuma) | `provisionar_e_implantar` | |
 | environment | `dev` | `dev` | |
 | instance_name | `todo-pm04` | `todo-pm04` | |
 | instance_type | `e2-micro` | **`e2-small`** | Alteração de infraestrutura (Terraform) |

@@ -14,7 +14,7 @@ Relação entre os requisitos do [documento de demanda](../../docs/escopo.md) e 
 
 ## Aplicação pela URL pública (celular)
 
-https://34-73-148-18.sslip.io — cadastrar, listar e concluir uma tarefa.
+https://34-73-148-18.sslip.io: cadastrar, listar e concluir uma tarefa.
 
 | 1. Digitando uma nova tarefa | 2. Tarefa cadastrada e listada | 3. Tarefa concluída |
 | --- | --- | --- |
