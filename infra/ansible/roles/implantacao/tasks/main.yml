@@ -44,4 +44,7 @@
     username: oauth2accesstoken
     password: "{{ token_vm.json.access_token }}"
     reauthorize: true
+  # Renovar o token não muda a VM: sem isto, toda reexecução apareceria como
+  # "changed" e o Cenário 3 (idempotência) não mostraria changed=0
+  changed_when: false
   no_log: true
