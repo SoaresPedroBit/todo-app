@@ -1,0 +1,4 @@
+projeto: "{{ lookup('env', 'TODO_PROJETO') }}"
+registro: "{{ tf.registry.value.split('/')[0] }}"
+segredo_app: todo-mongo-app-password
+segredo_root: todo-mongo-root-password

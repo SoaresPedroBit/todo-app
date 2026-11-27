@@ -1,0 +1,47 @@
+# Comum às duas VMs: arquivos de operação, variáveis da instância e acesso ao
+# registro de imagens.
+- name: Copiar os scripts de operação (status, logs, backups)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../deploy/{{ item }}"
+    dest: "/opt/todo/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - common.sh
+    - "{{ papel }}/ops.sh"
+
+- name: Copiar a definição dos contêineres
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../deploy/{{ papel }}/{{ item }}"
+    dest: "/opt/todo/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ ['compose.yaml', 'Caddyfile'] if papel == 'app' else ['compose.yaml'] }}"
+
+# Lido pelo ops.sh e pelo cron do backup
+- name: Gravar as variáveis da instância
+  ansible.builtin.template:
+    src: instancia.env.j2
+    dest: /opt/todo/instancia.env
+    owner: root
+    group: root
+    mode: "0600"
+
+# Token temporário da conta de serviço da própria VM: nenhuma chave em disco
+- name: Obter o token da conta de serviço da VM
+  ansible.builtin.uri:
+    url: http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+    headers:
+      Metadata-Flavor: Google
+  register: token_vm
+  no_log: true
+
+- name: Entrar no Artifact Registry
+  community.docker.docker_login:
+    registry_url: "{{ registro }}" # mesmo formato do "docker login": substitui um login antigo
+    username: oauth2accesstoken
+    password: "{{ token_vm.json.access_token }}"
+    reauthorize: true
+  no_log: true

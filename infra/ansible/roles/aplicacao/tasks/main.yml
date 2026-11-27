@@ -1,0 +1,85 @@
+# Sobe Caddy (HTTPS), frontend e API na VM da aplicação.
+- name: Criar a pasta de segredos
+  ansible.builtin.file:
+    path: /opt/todo/secrets
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ler a senha da aplicação no Secret Manager
+  ansible.builtin.uri:
+    url: "https://secretmanager.googleapis.com/v1/projects/{{ projeto }}/secrets/{{ segredo_app }}/versions/latest:access"
+    headers:
+      Authorization: "Bearer {{ token_vm.json.access_token }}"
+  register: senha_app
+  no_log: true
+
+# 1000 = usuário "node" da imagem da API
+- name: Gravar a conexão com o banco (rede privada)
+  ansible.builtin.copy:
+    content: "mongodb://todo_app:{{ senha_app.json.payload.data | b64decode | trim }}@{{ tf.db_private_ip.value }}:27017/todo-app?authSource=todo-app"
+    dest: /opt/todo/secrets/mongo_uri
+    owner: "1000"
+    group: "1000"
+    mode: "0400"
+  no_log: true
+
+- name: Gravar a versão da aplicação
+  ansible.builtin.copy:
+    dest: /opt/todo/.env
+    content: |
+      FRONTEND_IMAGE={{ imagem_frontend }}
+      BACKEND_IMAGE={{ imagem_backend }}
+      SITE_ADDRESS={{ tf.site_address.value }}
+      TLS_DIRETIVA="# certificado publico automatico"
+    owner: root
+    group: root
+    mode: "0600"
+
+# Logo depois de uma queda do banco, a API já responde mas o Docker ainda a
+# marca como "unhealthy" até a próxima checagem; subir nessa hora falharia.
+- name: Aguardar contêineres se recuperarem de uma queda
+  ansible.builtin.command: docker ps -q --filter name=todo-app- --filter health=unhealthy
+  register: doentes
+  until: doentes.stdout | length == 0
+  retries: 12
+  delay: 5
+  changed_when: false
+  failed_when: false
+
+- name: Subir a aplicação
+  community.docker.docker_compose_v2:
+    project_src: /opt/todo
+    pull: missing # cada versão tem etiqueta própria (o commit)
+    remove_orphans: true
+    wait: true
+    wait_timeout: 240
+  register: compose_app
+
+# Pelo Nginx, como um visitante: confirma a API e a conexão com o banco
+- name: Conferir a saúde da aplicação
+  ansible.builtin.command: >-
+    docker compose --project-directory /opt/todo exec -T frontend
+    wget -q -O - http://127.0.0.1/health
+  register: saude
+  until: saude.rc == 0 and '"status":"ok"' in saude.stdout
+  retries: 30
+  delay: 4
+  changed_when: false
+
+- name: Registrar a versão implantada
+  ansible.builtin.shell: >-
+    printf '%s frontend=%s backend=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    '{{ imagem_frontend }}' '{{ imagem_backend }}' >>/opt/todo/releases.log
+  when: compose_app.changed
+  changed_when: true
+
+- name: Apagar imagens antigas sem uso
+  community.docker.docker_prune:
+    images: true
+  when: compose_app.changed
+
+- name: Mostrar o resultado
+  ansible.builtin.debug:
+    msg: "Saúde: {{ saude.stdout }} | https://{{ tf.site_address.value }}"

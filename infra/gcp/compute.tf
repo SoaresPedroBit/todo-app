@@ -10,8 +10,8 @@ resource "google_compute_address" "app" {
 
 locals {
   vms = {
-    app = { tipo = var.app_machine_type, subnet = google_compute_subnetwork.publica.id, ip = var.app_private_ip }
-    db  = { tipo = var.db_machine_type, subnet = google_compute_subnetwork.privada.id, ip = var.db_private_ip }
+    app = { subnet = google_compute_subnetwork.publica.id, ip = var.app_private_ip }
+    db  = { subnet = google_compute_subnetwork.privada.id, ip = var.db_private_ip }
   }
 }
 
@@ -19,7 +19,7 @@ resource "google_compute_instance" "vm" {
   for_each                  = local.vms
   name                      = "todo-${each.key}"
   machine_type              = var.instance_type
-  allow_stopping_for_update = true
+  allow_stopping_for_update = true # trocar o tipo desliga e religa a VM (Cenário 2)
 
   labels = {
     environment   = var.environment

@@ -11,7 +11,7 @@ A versão local em LocalStack, mantida como plano B, está em [localstack/arquit
 | Região | `us-east1` | A cota grátis só existe em três regiões dos EUA. Latência maior que São Paulo, aceitável para uma lista de tarefas. |
 | VMs | 2 × `e2-micro` (1 GB), Ubuntu 24.04 | Menor máquina que atende; medido em uso (seção 7). |
 | Acesso administrativo | SSH por Identity-Aware Proxy | Porta 22 fechada na internet, sem depender do IP de quem administra. |
-| Ferramentas | **Terraform** cria, **Ansible** configura, **Docker Compose** executa; Bash e GitHub Actions orquestram | Cada ferramenta com um papel. Terraform e Ansible rodam em contêiner: a equipe só instala Docker, Git, Node e gcloud. |
+| Ferramentas | **Terraform** cria, **Ansible** configura e sobe os contêineres, **Docker Compose** os descreve; Bash e GitHub Actions orquestram | Cada ferramenta com um papel. Terraform e Ansible rodam em contêiner: a equipe só instala Docker, Git, Node e gcloud. |
 
 ## 2. Diagnóstico do ponto de partida (escopo, etapa 1)
 
@@ -68,7 +68,7 @@ O Nginx entrega a interface e encaminha `/todos`, `/todos/:id` e `/health` à AP
 - **Privilégio mínimo:** uma conta de serviço por VM. A aplicação lê só a própria senha. O banco lê as duas, e no bucket cria e lê backups, sem sobrescrever nem apagar.
 - **Segredos:** gerados na máquina de quem administra (`.local/`, fora do Git), enviados ao Secret Manager por stdin e gravados nas VMs em arquivos 0400. Não entram no código, no estado do Terraform, na linha de comando nem nos logs; o aceite procura os valores reais.
 - **HTTPS:** Caddy com certificado Let's Encrypt, renovação automática, redirecionamento 308 e HSTS. O endereço é `<ip>.sslip.io`, um DNS público gratuito que aponta para o próprio IP.
-- **GitHub Actions sem chave de nuvem:** identidade por OIDC ([infra/gcp-ci](../infra/gcp-ci/main.tf)), limitada a um repositório, ao branch `main` e a execução manual. Não cria nem apaga recursos. A chave SSH fica em um *secret* do repositório.
+- **GitHub Actions sem chave de nuvem:** identidade por OIDC ([infra/gcp-ci](../infra/gcp-ci/main.tf)), limitada a um repositório, ao branch `main` e a execução manual. Cria, altera e remove os recursos do projeto (VMs, rede, firewall, discos, segredos, registro e bucket), mas não muda o IAM do projeto. A chave SSH fica em um *secret* do repositório.
 
 ## 5. Persistência, backup e restauração (REQ-04)
 
@@ -85,7 +85,8 @@ O Nginx entrega a interface e encaminha `/todos`, `/todos/:id` e `/health` à AP
 | --- | --- | --- |
 | Criar rede, VMs, discos, permissões | Terraform | `infra/gcp/` |
 | Configurar as VMs: Docker, swap, disco de dados, serviço de boot | Ansible | `infra/ansible/` |
-| Implantar, operar e recuperar a aplicação | Docker Compose + `ops.sh` | `deploy/` |
+| Implantar: senhas, versões, login no registro e subida dos contêineres | Ansible + Docker Compose | `infra/ansible/implantar.yml`, `deploy/*/compose.yaml` |
+| Operar e recuperar: status, logs, backup, restauração | `ops.sh` | `deploy/` |
 | Orquestrar as rotinas | `pipeline-gcp.sh` e GitHub Actions | `scripts/`, `.github/workflows/` |
 
 O Ansible alcança as VMs por dentro do IAP e é idempotente: `preparar --check` mostra o que mudaria sem mudar. Ele só formata disco sem sistema de arquivos; na dúvida, para.
@@ -101,7 +102,7 @@ O Ansible alcança as VMs por dentro do IAP e é idempotente: `preparar --check`
 
 - **Estado do Terraform:** bucket privado e versionado. Para recuperar, restaure a versão anterior do objeto `todo-app/default.tfstate`.
 - **Versões:** imagens com o SHA do commit no Artifact Registry. A imagem do banco só muda quando `banco-de-dados/` muda, então atualizar a aplicação não reinicia o MongoDB.
-- **Workflows:** `ci.yml` (validação e integração), `localstack.yml` (ciclo completo local) e `gcp.yml` (plano, implantação, rollback e aceite na GCP).
+- **Workflows:** `ci.yml` (validação e integração), `localstack.yml` (ciclo completo local) e `gcp.yml` (plano, criação ou alteração das VMs, implantação, rollback, aceite e desativação na GCP). O tipo das VMs é uma entrada do `gcp.yml` (`instance_type`).
 
 ## 7. Dimensionamento medido (24/11/2026)
 
@@ -110,7 +111,7 @@ O Ansible alcança as VMs por dentro do IAP e é idempotente: `preparar --check`
 | `todo-app` | 501 de 953 MB | 18 MB | 52% |
 | `todo-db` | 365 de 953 MB | 143 MB | 60% |
 
-Medido em repouso, após o aceite. A margem é pequena: um healthcheck pesado chegou a travar a VM do banco durante um teste (causa e correção no [relatório](relatorio-validacao.md)). O MongoDB usa cache fixo de 0,25 GB e cada VM tem 1 GB de swap. **Não foi feito teste de carga.** Se a feira exigir mais, mude `app_machine_type` ou `db_machine_type` para `e2-small`.
+Medido em repouso, após o aceite. A margem é pequena: um healthcheck pesado chegou a travar a VM do banco durante um teste (causa e correção no [relatório](relatorio-validacao.md)). O MongoDB usa cache fixo de 0,25 GB e cada VM tem 1 GB de swap. **Não foi feito teste de carga.** Se a feira exigir mais, rode a pipeline com `instance_type` = `e2-small` (sai da cota grátis).
 
 ## 8. Limitações e premissas
 

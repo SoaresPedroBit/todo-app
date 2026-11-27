@@ -76,18 +76,23 @@ resource "google_service_account_iam_member" "github" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
 }
 
-# Publicar imagens, entrar nas VMs pelo IAP, e ler a infraestrutura e o estado.
-# Não cria nem apaga recursos: "provisionar" e "desativar" ficam com o dono.
+# A pipeline cria, altera e remove todos os recursos de infra/gcp (Cenários 1 e 2
+# do PM04), publica as imagens e entra nas VMs pelo IAP. Cada papel cobre um
+# grupo de recursos do Terraform; nenhum permite mudar o IAM do projeto.
+# Só o ramo main do repositório do grupo usa esta conta (ver acima).
 resource "google_project_iam_member" "ci" {
   for_each = toset([
     "roles/browser",
-    "roles/compute.viewer",
     "roles/iam.securityReviewer",
-    "roles/artifactregistry.writer",
-    "roles/iap.tunnelResourceAccessor",
-    "roles/secretmanager.viewer",
-    "roles/secretmanager.secretAccessor",
-    "roles/storage.bucketViewer", # só metadados dos buckets, para o plan
+    "roles/compute.instanceAdmin.v1",   # VMs e discos
+    "roles/compute.networkAdmin",       # VPC, sub-redes, IP, roteador e NAT
+    "roles/compute.securityAdmin",      # regras de firewall
+    "roles/iam.serviceAccountAdmin",    # contas de serviço das VMs
+    "roles/iam.serviceAccountUser",     # ligar essas contas às VMs
+    "roles/artifactregistry.admin",     # repositório de imagens e quem o lê
+    "roles/secretmanager.admin",        # recipientes e valores das senhas
+    "roles/storage.admin",              # bucket de backups e quem grava nele
+    "roles/iap.tunnelResourceAccessor", # SSH para o Ansible
   ])
   project = var.project_id
   role    = each.key

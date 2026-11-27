@@ -1,5 +1,5 @@
 # Configuração das duas VMs. Idempotente: rodar de novo não altera o que está pronto.
-# O Terraform cria as VMs; este playbook as configura; o ops.sh implanta a aplicação.
+# O Terraform cria as VMs; este playbook as configura; implantar.yml sobe os contêineres.
 - name: Configuração comum
   hosts: all
   become: true

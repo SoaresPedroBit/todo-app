@@ -1,5 +1,8 @@
 name: GCP
 
+# Cenário 1: criar do zero         -> acao provisionar_e_implantar (sem nada no projeto)
+# Cenário 2: trocar o tipo das VMs -> acao provisionar_e_implantar com outro instance_type
+# Terraform cria/altera as VMs; Ansible as configura e sobe os contêineres.
 on:
   workflow_dispatch:
     inputs:
@@ -12,35 +15,36 @@ on:
           - provisionar_e_implantar
           - rollback
           - aceite
+          - desativar
       environment:
         description: "Ambiente de destino (dev / homolog / prod)"
         type: choice
         default: dev
         options: [dev, homolog, prod]
       instance_name:
-        description: "Identificador/Prefixo das VMs"
+        description: "Identificador das VMs (etiqueta; minúsculas, números e hífen)"
         type: string
         default: "todo-pm04"
       instance_type:
-        description: "Tipo da máquina na GCP (ex: e2-micro, e2-small)"
+        description: "Tipo da máquina na GCP (e2-micro é o grátis; e2-small é cobrado)"
         type: string
         default: "e2-micro"
-      docker_image:
-        description: "Imagem/Serviço alvo (todo-app)"
-        type: string
-        default: "todo-app"
       docker_tag:
-        description: "Tag/Versão das imagens Docker (vazio = SHA do commit)"
+        description: "Tag das imagens (vazio = commit). No rollback: a versão a voltar"
         required: false
         default: ""
       update_os:
-        description: "Aplicar atualizações do SO via Ansible"
+        description: "Aplicar atualizações do SO via Ansible (liga o NAT do banco)"
         type: boolean
         default: false
       extra_packages:
-        description: "Pacotes adicionais (separados por vírgula)"
+        description: "Pacotes adicionais, separados por vírgula (liga o NAT do banco)"
         type: string
-        default: "curl,git,unzip"
+        default: ""
+      confirmacao:
+        description: "Só para desativar: digite DESTRUIR"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -52,10 +56,10 @@ concurrency:
 
 jobs:
   executar:
-    name: ${{ inputs.acao }} (${{ inputs.environment }})
+    name: ${{ inputs.acao }} (${{ inputs.environment }}, ${{ inputs.instance_type }})
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       CONFIRMAR: CRIAR
       UPDATE_OS: ${{ inputs.update_os }}
@@ -72,49 +76,70 @@ jobs:
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
 
+      # As entradas chegam por variáveis de ambiente e são conferidas antes de
+      # virar configuração: nada do formulário é executado como comando.
       - name: Configuração local e variáveis Terraform
         env:
           PROJETO: ${{ vars.GCP_PROJECT_ID }}
           CHAVE: ${{ secrets.TODO_SSH_KEY }}
           PUB: ${{ vars.TODO_SSH_PUB }}
+          AMBIENTE: ${{ inputs.environment }}
+          NOME: ${{ inputs.instance_name }}
+          TIPO: ${{ inputs.instance_type }}
         run: |
+          [[ $NOME =~ ^[a-z][a-z0-9-]{0,62}$ ]] || { echo "instance_name inválido: $NOME"; exit 1; }
+          [[ $TIPO =~ ^[a-z][a-z0-9]*-[a-z0-9-]+$ ]] || { echo "instance_type inválido: $TIPO"; exit 1; }
+          [[ -z $EXTRA_PACKAGES || $EXTRA_PACKAGES =~ ^[a-z0-9.+,\ -]+$ ]] || { echo "extra_packages inválido"; exit 1; }
+          [[ -z $DOCKER_TAG || $DOCKER_TAG =~ ^[A-Za-z0-9._-]+$ ]] || { echo "docker_tag inválida"; exit 1; }
           cat <<EOF > infra/gcp/terraform.tfvars
           project_id    = "$PROJETO"
-          environment   = "${{ inputs.environment }}"
-          instance_name = "${{ inputs.instance_name }}"
-          instance_type = "${{ inputs.instance_type }}"
+          environment   = "$AMBIENTE"
+          instance_name = "$NOME"
+          instance_type = "$TIPO"
           EOF
-          echo 'saida_internet_banco = true' > infra/gcp/nat.auto.tfvars
+          # O NAT (saída de internet do banco) só existe quando há pacote para instalar
+          if [[ $UPDATE_OS == true || -n $EXTRA_PACKAGES ]]; then nat=true; else nat=false; fi
+          echo "saida_internet_banco = $nat" > infra/gcp/nat.auto.tfvars
           install -d -m 700 .local/gcp/ssh
           (umask 077; printf '%s\n' "$CHAVE" > .local/gcp/ssh/id_ed25519)
           printf '%s\n' "$PUB" > .local/gcp/ssh/id_ed25519.pub
-#mudar para false depois
-      - name: 1. Terraform Plan
+
+      - name: 1. Terraform plan
+        if: inputs.acao != 'desativar'
         run: |
           set -o pipefail
           ./scripts/pipeline-gcp.sh planejar | tee plano.txt
 
-      - name: 2. Terraform Apply + Ansible (Provisionar e Configurar)
+      - name: 2. Terraform apply + Ansible (configurar as VMs)
         if: inputs.acao == 'provisionar_e_implantar'
         run: ./scripts/pipeline-gcp.sh provisionar
 
-      - name: 3. Implantar Aplicação (Containers)
+      - name: 3. Ansible (subir os contêineres)
         if: inputs.acao == 'provisionar_e_implantar'
         run: ./scripts/pipeline-gcp.sh implantar
 
-      - name: Rollback
+      - name: Rollback (Ansible, só a aplicação)
         if: inputs.acao == 'rollback'
         run: |
-          [[ "${{ inputs.docker_tag }}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Informe uma tag válida em docker_tag"; exit 1; }
-          ./scripts/pipeline-gcp.sh implantar "${{ inputs.docker_tag }}"
+          [[ -n $DOCKER_TAG ]] || { echo "Informe em docker_tag a versão a voltar"; exit 1; }
+          ./scripts/pipeline-gcp.sh implantar "$DOCKER_TAG"
 
       - name: Critérios de aceite
         if: inputs.acao == 'aceite'
         run: ./scripts/pipeline-gcp.sh aceite
 
+      # O backup final fica só no runner, que é apagado: o repositório é público
+      # e os dados não vão como artefato. Para guardá-los, rode antes
+      # "./scripts/pipeline-gcp.sh backup" na máquina da equipe.
+      - name: Desativar (Terraform destroy)
+        if: inputs.acao == 'desativar'
+        env:
+          CONFIRMAR: ${{ inputs.confirmacao }}
+        run: ./scripts/pipeline-gcp.sh desativar
+
       - name: Apagar credenciais do runner
         if: always()
-        run: rm -rf .local/gcp/ssh .local/gcp/segredos
+        run: rm -rf .local/gcp/ssh .local/gcp/segredos .local/backups
 
       - name: Anexar evidências
         if: always()

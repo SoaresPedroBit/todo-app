@@ -1,0 +1,157 @@
+# Sobe o MongoDB na VM do banco. Os dados ficam no disco separado, montado
+# pelo configurar.yml; trocar a imagem ou recriar o contêiner não os apaga.
+- name: Conferir se o disco de dados está montado
+  ansible.builtin.command: mountpoint -q /mnt/mongo-data
+  changed_when: false
+
+- name: Criar as pastas de dados e de backups
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.dono }}"
+    group: "{{ item.dono }}"
+    mode: "0700"
+  loop:
+    - { path: /mnt/mongo-data/db, dono: "999" } # 999 = usuário mongodb da imagem
+    - { path: /mnt/mongo-data/backups, dono: root }
+    - { path: /opt/todo/secrets, dono: root }
+
+# As senhas vão do Secret Manager direto para arquivos protegidos; no_log
+# impede que apareçam na saída do Ansible ou do GitHub.
+- name: Ler as senhas do Secret Manager
+  ansible.builtin.uri:
+    url: "https://secretmanager.googleapis.com/v1/projects/{{ projeto }}/secrets/{{ item }}/versions/latest:access"
+    headers:
+      Authorization: "Bearer {{ token_vm.json.access_token }}"
+  loop: ["{{ segredo_root }}", "{{ segredo_app }}"]
+  register: senhas
+  no_log: true
+
+- name: Gravar as senhas para o contêiner
+  ansible.builtin.copy:
+    content: "{{ item.0.json.payload.data | b64decode | trim }}"
+    dest: "/opt/todo/secrets/{{ item.1 }}"
+    owner: "999"
+    group: "999"
+    mode: "0400"
+  loop: "{{ senhas.results | zip(['mongo_root_password', 'mongo_app_password']) | list }}"
+  no_log: true
+
+# Para mongodump/mongorestore: a senha não aparece na linha de comando
+- name: Gravar a configuração das ferramentas de backup
+  ansible.builtin.copy:
+    content: "password: {{ senhas.results[0].json.payload.data | b64decode | trim }}\n"
+    dest: /opt/todo/secrets/mongotools.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Gravar a versão do banco
+  ansible.builtin.copy:
+    dest: /opt/todo/.env
+    content: |
+      MONGO_IMAGE={{ imagem_banco }}
+      PRIVATE_IP={{ tf.db_private_ip.value }}
+    owner: root
+    group: root
+    mode: "0600"
+  register: versao_banco
+
+- name: Verificar se o banco já está rodando
+  ansible.builtin.command: docker ps -q --filter name=^todo-mongo$
+  register: mongo_rodando
+  changed_when: false
+
+- name: Backup preventivo antes de trocar a versão
+  ansible.builtin.command: /opt/todo/ops.sh backup pre-deploy
+  when: versao_banco.changed and mongo_rodando.stdout | length > 0
+  changed_when: true
+
+- name: Subir o MongoDB
+  community.docker.docker_compose_v2:
+    project_src: /opt/todo
+    pull: missing # a etiqueta da imagem muda quando o conteúdo muda
+    wait: true
+    wait_timeout: 240
+  register: compose_banco
+
+# Equivalente ao firewall da VPC, dentro da VM: a 27017 só aceita a aplicação
+- name: Criar a regra de firewall do MongoDB
+  ansible.builtin.iptables:
+    chain: TODO-MONGO
+    chain_management: true
+
+- name: Aceitar somente a VM da aplicação
+  ansible.builtin.iptables:
+    chain: TODO-MONGO
+    source: "{{ tf.app_private_ip.value }}"
+    jump: RETURN
+
+- name: Descartar o resto
+  ansible.builtin.iptables:
+    chain: TODO-MONGO
+    jump: DROP
+
+- name: Aplicar a regra ao tráfego dos contêineres
+  ansible.builtin.iptables:
+    chain: DOCKER-USER
+    protocol: tcp
+    destination_port: "27017"
+    jump: TODO-MONGO
+    action: insert
+
+# Na primeira subida, a imagem roda o init-mongo.js num mongod temporário e
+# depois o reinicia: espera esse fim e um ping autenticado.
+- name: Aguardar o MongoDB ficar pronto
+  ansible.builtin.shell: |
+    set -o pipefail
+    if docker logs todo-mongo 2>&1 | grep -q initdb.d \
+       && ! docker logs todo-mongo 2>&1 | grep -q 'MongoDB init process complete'; then
+      exit 1
+    fi
+    docker exec todo-mongo mongosh --quiet --norc --eval "$JS_AUTH quit(db.adminCommand('ping').ok ? 0 : 1)"
+  args:
+    executable: /bin/bash
+  environment:
+    JS_AUTH: "{{ js_auth }}"
+  register: ping
+  until: ping.rc == 0
+  retries: 60
+  delay: 2
+  changed_when: false
+
+- name: Garantir o usuário da aplicação (somente leitura e escrita em todo-app)
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - todo-mongo
+      - mongosh
+      - --quiet
+      - --norc
+      - --eval
+      - >-
+        {{ js_auth }}
+        const pw = require('fs').readFileSync('/run/secrets/mongo_app_password','utf8').trim();
+        const d = db.getSiblingDB('todo-app');
+        const roles = [{ role: 'readWrite', db: 'todo-app' }];
+        if (d.getUser('todo_app')) { d.updateUser('todo_app', { pwd: pw, roles }); print('existente'); }
+        else { d.createUser({ user: 'todo_app', pwd: pw, roles }); print('criado'); }
+  register: usuario_app
+  changed_when: "'criado' in usuario_app.stdout"
+
+- name: Agendar o backup a cada 6 horas
+  ansible.builtin.lineinfile:
+    path: /etc/cron.d/todo-backup
+    regexp: 'ops\.sh backup agendado'
+    line: "0 */6 * * * root . /opt/todo/instancia.env && /opt/todo/ops.sh backup agendado >>/var/log/todo-backup.log 2>&1"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Registrar a versão implantada
+  ansible.builtin.shell: printf '%s mongo=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{{ imagem_banco }}' >>/opt/todo/releases.log
+  when: compose_banco.changed
+  changed_when: true

@@ -61,13 +61,13 @@ Testes: `cd frontend && npm test` · fluxo completo: `./scripts/smoke-test.sh ht
 | `backend/` | API Node.js/Express + Mongoose (configuração por ambiente, `/health`, reconexão) |
 | `banco-de-dados/` | Imagem MongoDB 7, usuário da aplicação e lista de demonstração |
 | `infra/gcp/` | Infraestrutura como código da Google Cloud: rede, 2 VMs, discos, IAM, segredos e backups |
-| `infra/ansible/` | Configuração das VMs da nuvem: Docker, swap, disco de dados e serviço de boot |
+| `infra/ansible/` | `configurar.yml`: Docker, swap, disco de dados e serviço de boot. `implantar.yml`: senhas, versões e subida dos contêineres |
 | `infra/gcp-ci/` | Acesso do GitHub Actions à GCP por OIDC, sem chave (aplicado pelo dono do projeto) |
 | `infra/terraform/` | Infraestrutura como código: VPC, Security Groups, EC2, EBS, S3, IAM, Secrets (LocalStack) e as VMs |
 | `infra/localstack/` | LocalStack 4.14 + registro de imagens |
 | `infra/vm-image/` | Imagem das VMs (Docker-in-Docker + AWS CLI) |
-| `deploy/` | Arquivos de cada VM: Compose, Caddyfile e `ops.sh` (deploy, status, backup, restore…) |
+| `deploy/` | Arquivos de cada VM: Compose, Caddyfile e `ops.sh` (status, backup, restore…; no LocalStack, também o deploy) |
 | `scripts/` | `pipeline-gcp.sh` (nuvem), `pipeline.sh` (local), `smoke-test.sh`, `verificar-isolamento.sh` |
-| `.github/workflows/` | `ci.yml` (validação), `localstack.yml` (ciclo completo local) e `gcp.yml` (plano, implantação, rollback e aceite na nuvem) |
+| `.github/workflows/` | `ci.yml` (validação), `localstack.yml` (ciclo completo local) e `gcp.yml` (plano, criação ou alteração das VMs, implantação, rollback, aceite e desativação na nuvem) |
 
 Para gerar os PDFs do escopo, instale a dependência `reportlab` e execute `python scripts/render-escopo.py`.

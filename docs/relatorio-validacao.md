@@ -16,7 +16,7 @@ Os registros completos ficam em `.local/evidencias/` (não versionado) e, nas ex
 | ACE-03 · Isolamento | ✅ | 8 verificações, abaixo. |
 | ACE-04 · Aplicação pública | ⚠️ quase | Fluxo completo por HTTPS automatizado. Em celular, a equipe informou que funcionou; **faltam os prints** e a confirmação do fluxo completo em 4G. |
 | ACE-05 · Persistência | ✅ | Recriação do contêiner, reinício da VM e implantação de versão com outra identificação. |
-| ACE-06 · Automação | ✅ | No GitHub: validação, ciclo local, plano, implantação (versão = commit), rollback e aceite. Criação e desativação na GCP executadas pelo pipeline, da máquina da equipe. |
+| ACE-06 · Automação | ✅ | No GitHub: validação, ciclo local, plano, implantação (versão = commit), rollback e aceite. Criação e desativação na GCP executadas pelo pipeline, da máquina da equipe; pelo GitHub, ver Pendências. |
 | ACE-07 · Recuperação | ✅ | Backups automáticos de 25/11 às 00, 06, 12 e 18 h, todos no horário; restauração isolada e restauração real testadas. |
 | ACE-08 · Operação | ✅ | Saúde, logs, reinícios, pausa, retomada e `desativar` executados; credenciais ausentes do código e dos registros. |
 | ACE-09 · Custos | ✅ | [arquitetura.md, seção 9](arquitetura.md#9-custos-ace-09), com preços do catálogo oficial em 24/11/2026. Comparar com o faturamento real após o evento. |
@@ -49,7 +49,7 @@ Os registros completos ficam em `.local/evidencias/` (não versionado) e, nas ex
 
 **Causa:** a API já respondia, mas o Docker ainda guardava o resultado da checagem anterior, e o `up --wait` falhou na hora.
 
-**Correção:** o `ops.sh` espera até um minuto a checagem se recuperar antes de implantar.
+**Correção:** a implantação espera até um minuto a checagem se recuperar antes de subir os contêineres (hoje no Ansible, `roles/aplicacao`).
 
 ## Execuções no GitHub
 
@@ -143,3 +143,8 @@ A restauração real (`restaurar`) foi executada no projeto temporário (acima),
 3. Dados da organização e responsáveis pelos acessos ([arquitetura.md, seção 8](arquitetura.md#8-limitações-e-premissas)).
 4. Conferir o faturamento real e fazer o encerramento depois da feira.
 5. Sem teste de carga; a margem de memória das VMs é pequena.
+6. Criação do zero (Cenário 1) e troca de `instance_type` (Cenário 2) **pelo GitHub**: o código está pronto, falta aplicar as novas permissões da pipeline (`infra/gcp-ci`) e executar.
+
+## Implantação pelo Ansible (27/11)
+
+A subida dos contêineres passou do `ops.sh` para o Ansible (`infra/ansible/implantar.yml`). Primeiro teste no ambiente da feira: o banco ficou como estava (`changed=0` no Compose) e a aplicação subiu a versão `af2637b` com saúde ok e teste de fumaça aprovado. A tentativa anterior falhou no login do registro, porque um login antigo, gravado em outro formato, tinha prioridade. Os contêineres antigos continuaram no ar durante a falha.

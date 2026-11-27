@@ -8,7 +8,7 @@ RUN apt-get update -qq \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -m venv /opt/ansible \
  && /opt/ansible/bin/pip install -q --no-cache-dir ansible-core==2.17.14 \
- && /opt/ansible/bin/ansible-galaxy collection install -p /usr/share/ansible/collections ansible.posix:==1.6.2
+ && /opt/ansible/bin/ansible-galaxy collection install -p /usr/share/ansible/collections ansible.posix:==1.6.2 community.docker:==4.8.1
 
 ENV PATH="/opt/ansible/bin:${PATH}"
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

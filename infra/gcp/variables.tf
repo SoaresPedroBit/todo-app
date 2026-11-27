@@ -52,18 +52,6 @@ variable "saida_internet_banco" {
 }
 
 # --- VMs ----------------------------------------------------------------------
-# Cota grátis: as horas de e2-micro somadas até o total de horas do mês (~720 h).
-# Duas VMs juntas cabem por ~15 dias por mês; desative ao terminar a feira.
-variable "app_machine_type" {
-  type    = string
-  default = "e2-micro"
-}
-
-variable "db_machine_type" {
-  type    = string
-  default = "e2-micro"
-}
-
 # Discos pd-standard: 10 + 10 + 10 = 30 GB, exatamente a cota grátis
 variable "boot_disk_gb" {
   type    = number
@@ -99,9 +87,17 @@ variable "instance_name" {
   default     = "todo"
 }
 
+# Cota grátis: as horas de e2-micro somadas até o total de horas do mês (~720 h).
+# Duas VMs juntas cabem por ~15 dias por mês; desative ao terminar a feira.
+# Outros tipos (ex.: e2-small) são cobrados.
 variable "instance_type" {
-  description = "Tipo de máquina das VMs na GCP"
+  description = "Tipo de máquina das duas VMs na GCP"
   type        = string
   default     = "e2-micro"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9]*-[a-z0-9-]+$", var.instance_type))
+    error_message = "Tipo de máquina inválido (ex.: e2-micro, e2-small)."
+  }
 }
 

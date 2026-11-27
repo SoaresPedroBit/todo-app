@@ -1,0 +1,5 @@
+# Autentica como root lendo a senha DENTRO do contêiner: ela não passa pela
+# linha de comando nem pelos logs.
+js_auth: >-
+  db.getSiblingDB('admin').auth('root',
+  require('fs').readFileSync('/run/secrets/mongo_root_password','utf8').trim());

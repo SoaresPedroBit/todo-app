@@ -133,7 +133,7 @@ cmd_validar() {
     deploy/common.sh deploy/app/ops.sh deploy/db/ops.sh infra/ansible/entrypoint.sh scripts/pipeline-gcp.sh
   construir_ansible
   docker run --rm -v "$RAIZ_DOCKER:/work:ro" -e ANSIBLE_CONFIG=/work/infra/ansible/ansible.cfg "$ANSIBLE_IMAGE" \
-    ansible-playbook --syntax-check /work/infra/ansible/configurar.yml
+    ansible-playbook --syntax-check /work/infra/ansible/configurar.yml /work/infra/ansible/implantar.yml
   ok "validado"
 }
 
@@ -192,20 +192,18 @@ EOF
 # O Ansible roda em contêiner e entra nas VMs pelo IAP, com o token temporário do gcloud
 ANSIBLE_IMAGE=todo-ansible:local
 construir_ansible() { docker build -q -t "$ANSIBLE_IMAGE" infra/ansible >/dev/null; }
+#   ansible_playbook <playbook.yml> [argumentos do ansible-playbook]
 ansible_playbook() {
-  local chaves
+  local playbook=$1 chaves
+  shift
   chaves=$(cd "$LOCAL/ssh" && { pwd -W 2>/dev/null || pwd; } | tr -d '\r')
   CLOUDSDK_AUTH_ACCESS_TOKEN=$(gcloud auth print-access-token | tr -d '\r')
   export CLOUDSDK_AUTH_ACCESS_TOKEN
   docker run --rm -v "$RAIZ_DOCKER:/work:ro" -v "$chaves:/chaves:ro" \
     -e CLOUDSDK_AUTH_ACCESS_TOKEN -e ANSIBLE_CONFIG=/work/infra/ansible/ansible.cfg \
     -e TODO_PROJETO="$PROJETO" -e TODO_ZONA="$ZONA" "$ANSIBLE_IMAGE" \
-    ansible-playbook /work/infra/ansible/configurar.yml \
-    -e "update_os=${UPDATE_OS:-false}" \
-    -e "extra_packages=${EXTRA_PACKAGES:-}" \
-    "$@"
+    ansible-playbook "/work/infra/ansible/$playbook" "$@"
 }
-
 
 #   preparar [--check]   ("--check" só mostra o que mudaria)
 cmd_preparar() {
@@ -213,31 +211,20 @@ cmd_preparar() {
   preparar_local
   gerar_ssh_config
   construir_ansible
-  ansible_playbook "$@"
+  ansible_playbook configurar.yml -e "update_os=${UPDATE_OS:-false}" -e "extra_packages=${EXTRA_PACKAGES:-}" "$@"
 }
 
-# Arquivos de operação e variáveis da instância
-sincronizar() {
-  local papel=$1
-  tar -C deploy -cf - common.sh -C "$papel" . \
-    | vm "$papel" 'sudo tar --no-same-owner -xf - -C /opt/todo && sudo chmod 755 /opt/todo/ops.sh /opt/todo/common.sh'
-  {
-    echo "export TODO_CLOUD=gcp TODO_ROLE=$papel TODO_PROJECT=$PROJETO"
-    echo "export TODO_REGISTRY_HOST=${REGIAO}-docker.pkg.dev"
-    echo "export TODO_INSTANCE_ID=$(saida "${papel}_instance_id")"
-    echo "export TODO_PRIVATE_IP=$(saida "${papel}_private_ip")"
-    echo "export TODO_SECRET_APP=todo-mongo-app-password"
-    if [[ $papel == app ]]; then
-      echo "export TODO_PUBLIC_IP=$(saida app_public_ip)"
-      echo "export TODO_DB_HOST=$(saida db_private_ip)"
-      echo "export TODO_SITE_ADDRESS=$(saida site_address)"
-      echo "export TODO_TLS_DIRETIVA='# certificado publico automatico'"
-    else
-      echo "export TODO_MONGO_ALLOWED_FROM=$(saida app_private_ip)"
-      echo "export TODO_SECRET_ROOT=todo-mongo-root-password"
-      echo "export TODO_BACKUP_BUCKET=$(saida backup_bucket)"
-    fi
-  } | vm "$papel" 'sudo sh -c "umask 077; cat >/opt/todo/instancia.env"'
+# Sobe os contêineres com o Ansible (implantar.yml), com as saídas do Terraform
+#   ansible_implantar <img-frontend> <img-backend> [img-banco]   (sem banco = só a aplicação)
+ansible_implantar() {
+  local frontend=$1 backend=$2 banco=${3:-} so_app=()
+  dir_privado "$LOCAL/ansible"
+  printf '{"tf": %s}\n' "$(tf output -json)" >"$LOCAL/ansible/saidas.json"
+  [[ -n $banco ]] || so_app=(--limit aplicacao)
+  gerar_ssh_config
+  construir_ansible
+  ansible_playbook implantar.yml "${so_app[@]}" -e @/work/.local/gcp/ansible/saidas.json \
+    -e "imagem_frontend=$frontend" -e "imagem_backend=$backend" -e "imagem_banco=${banco:-nenhuma}"
 }
 
 versao_atual() {
@@ -280,16 +267,14 @@ cmd_implantar() {
     publicar_imagem banco-de-dados "$imgdb"
   fi
 
-  etapa "Banco: implantar"
   if [[ -n $rollback ]]; then
-    echo "Rollback da aplicação: o banco permanece como está (os dados não voltam no tempo)"
+    etapa "Ansible: implantar a aplicação (rollback)"
+    echo "O banco permanece como está (os dados não voltam no tempo)"
+    ansible_implantar "$reg/frontend:$versao" "$reg/backend:$versao"
   else
-    sincronizar db
-    ops db deploy "$imgdb"
+    etapa "Ansible: implantar o banco e a aplicação"
+    ansible_implantar "$reg/frontend:$versao" "$reg/backend:$versao" "$imgdb"
   fi
-  etapa "Aplicação: implantar"
-  sincronizar app
-  ops app deploy "$reg/frontend:$versao" "$reg/backend:$versao"
 
   printf '%s versao=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$versao" >>"$LOCAL/releases.log"
   url=$(saida app_url)
@@ -408,7 +393,7 @@ aceite_execucao() {
   ok "preservada após reiniciar a VM do banco"
   atual=$(vm app "sudo sh -c '. /opt/todo/.env; echo \$FRONTEND_IMAGE \$BACKEND_IMAGE'" </dev/null)
   # shellcheck disable=SC2086
-  ops app deploy $atual >/dev/null
+  ansible_implantar $atual >/dev/null
   concluida
   ok "preservada após atualizar a aplicação"
   curl -fsS -X DELETE "$url/todos/$id" >/dev/null
@@ -499,7 +484,7 @@ Uso: ./scripts/pipeline-gcp.sh <rotina> [argumentos]
   planejar                terraform plan
   provisionar             aplica o plano exibido e prepara as VMs (pede CRIAR)
   preparar [--check]      configura as VMs com Ansible (--check só simula)
-  implantar [versao]      constrói, publica e implanta; com versao = rollback
+  implantar [versao]      constrói, publica e implanta com Ansible; com versao = rollback
   versoes                 versões disponíveis e histórico
   status                  estado das duas VMs
   logs-app [serviço] [n]  logs da aplicação

@@ -1,0 +1,23 @@
+# Implantação dos contêineres nas duas VMs (PM04, item 3.3).
+# Chamado por "pipeline-gcp.sh implantar", que antes publica as imagens no
+# Artifact Registry e passa:
+#   tf               saídas do Terraform (terraform output -json)
+#   imagem_frontend  imagem_backend  imagem_banco
+# Rollback: o pipeline usa "--limit aplicacao" e o banco não é tocado.
+#
+# Banco primeiro: a aplicação só sobe depois de o MongoDB estar pronto.
+- name: Banco (MongoDB)
+  hosts: banco
+  become: true
+  gather_facts: false
+  roles:
+    - implantacao
+    - mongo
+
+- name: Aplicação (Caddy, frontend e API)
+  hosts: aplicacao
+  become: true
+  gather_facts: false
+  roles:
+    - implantacao
+    - aplicacao
