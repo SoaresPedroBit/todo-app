@@ -1,6 +1,6 @@
 # VM 1 / APLICAÇÃO — Caddy (HTTPS) -> Nginx + React -> API Express.
-# Arquivo copiado para /opt/todo/compose.yaml pelo pipeline e executado por
-# /opt/todo/ops.sh. As variáveis vêm de /opt/todo/.env (gerado pelo ops.sh).
+# Arquivo copiado para /opt/todo/compose.yaml pelo pipeline. As variáveis vêm de
+# /opt/todo/.env, gerado pelo Ansible na GCP (roles/aplicacao) e pelo ops.sh no LocalStack.
 
 name: todo-app
 

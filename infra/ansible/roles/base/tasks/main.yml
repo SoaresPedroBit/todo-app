@@ -73,6 +73,24 @@
     group: root
     mode: "0755"
 
+# --- Atualizações do sistema operacional (parâmetro update_os) ----------------
+# A verificação roda sempre, só lendo o cache do apt (sem internet e sem mudar
+# nada); a aplicação das atualizações depende do parâmetro.
+- name: Verificar atualizações pendentes do sistema operacional
+  ansible.builtin.command: apt list --upgradable
+  register: apt_pendentes
+  changed_when: false
+  check_mode: false # leitura: roda também na simulação
+
+- name: Mostrar as atualizações pendentes
+  ansible.builtin.debug:
+    msg: >-
+      {{ pendentes | length }} pacote(s) com atualização pendente no cache do apt
+      {{ '(serão aplicadas: update_os=true)' if update_os | default(false) | bool else '(não aplicadas: update_os=false)' }}{{
+      ': ' ~ (pendentes | map('regex_replace', '/.*$', '') | join(', ')) if pendentes | length > 0 else '' }}
+  vars:
+    pendentes: "{{ apt_pendentes.stdout_lines | select('search', 'upgradable from') | list }}"
+
 - name: Atualizar pacotes do sistema operacional (quando update_os=true)
   ansible.builtin.apt:
     update_cache: true
@@ -80,12 +98,27 @@
     lock_timeout: 300
   when: update_os | default(false) | bool
 
+# Kernel e bibliotecas novos só valem após reiniciar. A VM não é reiniciada
+# sozinha (derrubaria o site no meio da pipeline): o aviso fica no registro.
+- name: Verificar se o sistema pede reinício
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reinicio
+
+- name: Avisar sobre reinício pendente
+  ansible.builtin.debug:
+    msg: "Reinício pendente após atualizações (kernel ou bibliotecas). Reinicie a VM em horário sem visitantes."
+  when: reinicio.stat.exists
+
+# --- Pacotes adicionais (parâmetro extra_packages) ----------------------------
+# Aceita "curl,git,unzip" ou "curl git unzip"; state: present mantém a
+# reexecução idempotente (já instalado = sem alteração).
 - name: Instalar pacotes adicionais solicitados na pipeline
   ansible.builtin.apt:
-    name: "{{ extra_packages.split(',') | map('trim') | reject('equalto', '') | list }}"
+    name: "{{ extra_packages.replace(',', ' ').split() }}"
     state: present
     update_cache: true
     lock_timeout: 300
   when:
     - extra_packages is defined
-    - extra_packages | trim | length > 0
+    - extra_packages.replace(',', ' ').split() | length > 0
