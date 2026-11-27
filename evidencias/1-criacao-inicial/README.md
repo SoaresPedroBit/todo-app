@@ -20,7 +20,7 @@ A mesma rotina que a pipeline executa (`scripts/pipeline-gcp.sh planejar` → `p
 | update_os | `false` |
 | extra_packages | _(vazio)_ |
 
-Pré-condição: projeto GCP sem as VMs. Na criação do zero, a pipeline liga sozinha o Cloud NAT do banco para que a VM nova baixe o Docker (`NAT do banco: true (VM do banco: ainda não existe)`).
+Pré-condição: projeto GCP sem as VMs. Na criação do zero, a pipeline liga sozinha o Cloud NAT do banco para que a VM nova baixe o Docker (`NAT do banco: true (VM do banco: ainda não existe)`). No fim da mesma execução, o passo 4 desliga o NAT, para que a reexecução com os mesmos parâmetros (cenário 3) mostre `No changes`.
 
 ## Resultado do ciclo em projeto temporário (25/11/2026)
 

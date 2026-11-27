@@ -1,7 +1,12 @@
 name: GCP
+run-name: "${{ inputs.acao }} · ${{ inputs.environment }} · ${{ inputs.instance_type }} · tag ${{ inputs.docker_tag || 'automática' }} · update_os=${{ inputs.update_os }} · pacotes: ${{ inputs.extra_packages || 'nenhum' }}"
 
-# Cenário 1: criar do zero         -> acao provisionar_e_implantar (sem nada no projeto)
-# Cenário 2: trocar o tipo das VMs -> acao provisionar_e_implantar com outro instance_type
+# Cenários do PM-04 (todos com acao = provisionar_e_implantar):
+#   1. Criar do zero: projeto sem recursos.
+#   2. Atualizar: outro instance_type (Terraform) e outra docker_tag,
+#      extra_packages ou update_os (Ansible).
+#   3. Reexecutar: os mesmos parâmetros, com docker_tag fixa. Esperado: "No changes"
+#      no Terraform e changed=0 no Ansible.
 # Terraform cria/altera as VMs; Ansible as configura e sobe os contêineres.
 on:
   workflow_dispatch:
@@ -17,12 +22,12 @@ on:
           - aceite
           - desativar
       environment:
-        description: "Ambiente de destino (dev / homolog / prod)"
+        description: "Ambiente de destino (dev / homolog / prod): etiqueta environment das VMs"
         type: choice
         default: dev
         options: [dev, homolog, prod]
       instance_name:
-        description: "Identificador das VMs (etiqueta; minúsculas, números e hífen)"
+        description: "Identificador das VMs (etiqueta instance_name; minúsculas, números e hífen)"
         type: string
         default: "todo-pm04"
       instance_type:
@@ -30,7 +35,7 @@ on:
         type: string
         default: "e2-micro"
       docker_tag:
-        description: "Tag das imagens (vazio = commit). No rollback: a versão a voltar"
+        description: "Tag das imagens (vazio = último commit que alterou frontend/ ou backend/). Tag já publicada é reaproveitada, não reconstruída. No rollback: a versão a voltar"
         required: false
         default: ""
       update_os:
@@ -38,7 +43,7 @@ on:
         type: boolean
         default: false
       extra_packages:
-        description: "Pacotes adicionais, separados por vírgula (liga o NAT do banco)"
+        description: "Pacotes adicionais, separados por vírgula ou espaço (liga o NAT do banco)"
         type: string
         default: ""
       confirmacao:
@@ -66,7 +71,11 @@ jobs:
       EXTRA_PACKAGES: ${{ inputs.extra_packages }}
       DOCKER_TAG: ${{ inputs.docker_tag }}
     steps:
+      # Histórico completo: a versão automática das imagens é o último commit que
+      # alterou a aplicação (um commit só de documentação não gera imagem nova)
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -87,9 +96,11 @@ jobs:
           NOME: ${{ inputs.instance_name }}
           TIPO: ${{ inputs.instance_type }}
         run: |
+          # Nomes de pacote Debian: minúsculas, números, ".", "+" e "-" (nunca começando por "-")
+          pacotes='^[ ,]*[[:lower:][:digit:]][[:lower:][:digit:].+-]*([ ,]+[[:lower:][:digit:]][[:lower:][:digit:].+-]*)*[ ,]*$'
           [[ $NOME =~ ^[a-z][a-z0-9-]{0,62}$ ]] || { echo "instance_name inválido: $NOME"; exit 1; }
           [[ $TIPO =~ ^[a-z][a-z0-9]*-[a-z0-9-]+$ ]] || { echo "instance_type inválido: $TIPO"; exit 1; }
-          [[ -z $EXTRA_PACKAGES || $EXTRA_PACKAGES =~ ^[a-z0-9.+,\ -]+$ ]] || { echo "extra_packages inválido"; exit 1; }
+          [[ -z $EXTRA_PACKAGES || $EXTRA_PACKAGES =~ $pacotes ]] || { echo "extra_packages inválido (ex.: curl,git,unzip)"; exit 1; }
           [[ -z $DOCKER_TAG || $DOCKER_TAG =~ ^[A-Za-z0-9._-]+$ ]] || { echo "docker_tag inválida"; exit 1; }
           cat <<EOF > infra/gcp/terraform.tfvars
           project_id    = "$PROJETO"
@@ -98,11 +109,20 @@ jobs:
           instance_type = "$TIPO"
           EOF
           # O NAT (saída de internet do banco) só existe quando há pacote para instalar.
-          # Na criação do zero (VM do banco ainda não existe) ele também liga: a VM
-          # nova precisa baixar o Docker. Se a consulta falhar, liga por segurança.
+          # Na criação do zero (VM do banco ainda não existe) ele liga só durante a
+          # execução: a VM nova precisa baixar o Docker, e o passo 4 o desliga no fim.
+          # Se a consulta falhar, liga por segurança.
           db=$(gcloud compute instances list --project="$PROJETO" --filter='name=todo-db' --format='value(name)' 2>/dev/null || true)
-          if [[ $UPDATE_OS == true || -n $EXTRA_PACKAGES || -z $db ]]; then nat=true; else nat=false; fi
+          if [[ $UPDATE_OS == true || -n $EXTRA_PACKAGES ]]; then
+            nat=true
+          elif [[ -z $db ]]; then
+            nat=true
+            echo "NAT_SO_NA_CRIACAO=true" >> "$GITHUB_ENV"
+          else
+            nat=false
+          fi
           echo "NAT do banco: $nat (VM do banco: ${db:-ainda não existe})"
+          echo "NAT_BANCO=$nat" >> "$GITHUB_ENV"
           echo "saida_internet_banco = $nat" > infra/gcp/nat.auto.tfvars
           install -d -m 700 .local/gcp/ssh
           (umask 077; printf '%s\n' "$CHAVE" > .local/gcp/ssh/id_ed25519)
@@ -116,17 +136,30 @@ jobs:
 
       - name: 2. Terraform apply + Ansible (configurar as VMs)
         if: inputs.acao == 'provisionar_e_implantar'
-        run: ./scripts/pipeline-gcp.sh provisionar
+        run: |
+          set -o pipefail
+          ./scripts/pipeline-gcp.sh provisionar 2>&1 | tee provisionar.log
 
       - name: 3. Ansible (subir os contêineres)
         if: inputs.acao == 'provisionar_e_implantar'
-        run: ./scripts/pipeline-gcp.sh implantar
+        run: |
+          set -o pipefail
+          ./scripts/pipeline-gcp.sh implantar 2>&1 | tee implantar.log
+
+      # Sem isto, reexecutar com os mesmos parâmetros logo depois do Cenário 1
+      # removeria o NAT, e o plano do Cenário 3 não mostraria "No changes".
+      - name: 4. Terraform (desligar o NAT usado só na criação)
+        if: inputs.acao == 'provisionar_e_implantar' && env.NAT_SO_NA_CRIACAO == 'true'
+        run: |
+          set -o pipefail
+          ./scripts/pipeline-gcp.sh nat desligar 2>&1 | tee nat.log
 
       - name: Rollback (Ansible, só a aplicação)
         if: inputs.acao == 'rollback'
         run: |
+          set -o pipefail
           [[ -n $DOCKER_TAG ]] || { echo "Informe em docker_tag a versão a voltar"; exit 1; }
-          ./scripts/pipeline-gcp.sh implantar "$DOCKER_TAG"
+          ./scripts/pipeline-gcp.sh implantar "$DOCKER_TAG" 2>&1 | tee implantar.log
 
       - name: Critérios de aceite
         if: inputs.acao == 'aceite'
@@ -145,6 +178,45 @@ jobs:
         if: always()
         run: rm -rf .local/gcp/ssh .local/gcp/segredos .local/backups
 
+      # Evidência na página da execução: parâmetros, plano/apply do Terraform e
+      # PLAY RECAP do Ansible (os registros completos vão no artefato)
+      - name: Resumo
+        if: always()
+        env:
+          ACAO: ${{ inputs.acao }}
+          AMBIENTE: ${{ inputs.environment }}
+          NOME: ${{ inputs.instance_name }}
+          TIPO: ${{ inputs.instance_type }}
+        run: |
+          limpo() { [[ -s $1 ]] && sed -E 's/\x1b\[[0-9;]*m//g' "$1"; }
+          bloco() {
+            local linhas
+            linhas=$(limpo "$2" | grep -E "$3" || true)
+            [[ -n $linhas ]] || return 0
+            # shellcheck disable=SC2016 # as crases são o bloco de código do Markdown
+            printf '\n### %s\n\n```text\n%s\n```\n' "$1" "$linhas"
+          }
+          tf='will be (created|updated in-place|destroyed)|must be replaced|Plan: [0-9]|No changes\.|Apply complete!'
+          an='^todo-(app|db) +: ok='
+          {
+            echo "## GCP · $ACAO"
+            echo
+            echo "| Parâmetro | Valor |"
+            echo "| --- | --- |"
+            echo "| environment | $AMBIENTE |"
+            echo "| instance_name | $NOME |"
+            echo "| instance_type | $TIPO |"
+            echo "| docker_tag | ${DOCKER_TAG:-automática} |"
+            echo "| update_os | $UPDATE_OS |"
+            echo "| extra_packages | ${EXTRA_PACKAGES:-nenhum} |"
+            echo "| NAT do banco | ${NAT_BANCO:-não calculado} |"
+            bloco "1. Terraform plan" plano.txt "$tf"
+            bloco "2. Terraform apply" provisionar.log "$tf"
+            bloco "2. Ansible: configurar.yml (SO, pacotes, Docker)" provisionar.log "$an"
+            bloco "3. Ansible: implantar.yml (contêineres)" implantar.log "$an|Construindo e publicando|\[OK\] (frontend|backend|mongo):|\[OK\] Versão"
+            bloco "4. NAT desligado após a criação" nat.log "$tf"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Anexar evidências
         if: always()
         uses: actions/upload-artifact@v4
@@ -152,6 +224,9 @@ jobs:
           name: evidencias-gcp-${{ inputs.acao }}-${{ inputs.environment }}
           path: |
             plano.txt
+            provisionar.log
+            implantar.log
+            nat.log
             .local/evidencias/
           if-no-files-found: warn
           include-hidden-files: true

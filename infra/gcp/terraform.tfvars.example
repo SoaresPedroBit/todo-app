@@ -2,3 +2,7 @@
 project_id = "todo-feira-xxxxx"
 # region = "us-east1"
 # zone   = "us-east1-b"
+# Parâmetros da pipeline do PM-04 (no GitHub Actions vêm do formulário):
+# environment   = "dev"       # dev, homolog ou prod (etiqueta)
+# instance_name = "todo-pm04" # etiqueta
+# instance_type = "e2-micro"  # e2-small é cobrado

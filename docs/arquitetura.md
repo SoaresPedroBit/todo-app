@@ -101,8 +101,8 @@ O Ansible alcança as VMs por dentro do IAP e é idempotente: `preparar --check`
 | Desativar | `pausar` · `retomar` · `nat` · `desativar` |
 
 - **Estado do Terraform:** bucket privado e versionado. Para recuperar, restaure a versão anterior do objeto `todo-app/default.tfstate`.
-- **Versões:** imagens com o SHA do commit no Artifact Registry. A imagem do banco só muda quando `banco-de-dados/` muda, então atualizar a aplicação não reinicia o MongoDB.
-- **Workflows:** `ci.yml` (validação e integração), `localstack.yml` (ciclo completo local) e `gcp.yml` (plano, criação ou alteração das VMs, implantação, rollback, aceite e desativação na GCP). O tipo das VMs é uma entrada do `gcp.yml` (`instance_type`).
+- **Versões:** imagens com o SHA do último commit que alterou `frontend/` ou `backend/`, no Artifact Registry. Um commit só de documentação não gera imagem nova. A imagem do banco só muda quando `banco-de-dados/` muda, então atualizar a aplicação não reinicia o MongoDB. Uma tag já publicada nunca é reconstruída: informar uma tag existente implanta aquela versão.
+- **Workflows:** `ci.yml` (validação e integração), `localstack.yml` (ciclo completo local) e `gcp.yml` (plano, criação ou alteração das VMs, implantação, rollback, aceite e desativação na GCP). Os parâmetros do `gcp.yml` e os cenários do PM-04 estão no [README](../README.md#pipeline-do-pm-04-github-actions).
 
 ## 7. Dimensionamento medido (24/11/2026)
 
@@ -121,7 +121,7 @@ Medido em repouso, após o aceite. A margem é pequena: um healthcheck pesado ch
 | Uma VM por função | Se uma cair, o site para. Reinício automático dos serviços e backup; sem alta disponibilidade, o que o escopo não pede. |
 | `sslip.io` é de terceiros | Se sair do ar, o endereço não resolve. Alternativa: domínio próprio em `site_address`. |
 | Lista compartilhada | Como no escopo; use `limpar-lista` antes de cada apresentação. |
-| NAT desligado | O banco não baixa pacotes da internet. Para atualizar: `nat ligar`, atualizar, `nat desligar`. |
+| NAT desligado | O banco não baixa pacotes da internet. Pelo GitHub, `update_os=true` ou `extra_packages` ligam o NAT na própria execução; a criação do zero o liga e desliga sozinha. Pela máquina da equipe: `nat ligar`, `preparar`, `nat desligar`. |
 | Recriar tudo muda o IP | `desativar` libera o IP. Não faça isso depois de divulgar o endereço. |
 
 ### Dados a confirmar com a organização (escopo, seções 11 e 13)

@@ -75,9 +75,14 @@
   when: compose_app.changed
   changed_when: true
 
+# Sem o filtro, o Docker só apaga imagens sem etiqueta; as versões antigas da
+# aplicação (etiquetadas) ficariam acumulando no disco de 10 GB. Um rollback
+# baixa de novo a versão do registro.
 - name: Apagar imagens antigas sem uso
   community.docker.docker_prune:
     images: true
+    images_filters:
+      dangling: false
   when: compose_app.changed
 
 - name: Mostrar o resultado

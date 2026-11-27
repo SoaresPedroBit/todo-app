@@ -53,7 +53,7 @@ Confira com `./scripts/pipeline-gcp.sh verificar`.
 | Só a aplicação falha | Contêiner travado | `reiniciar-app` |
 | "sem SSH" ou pedido de login | Sessão do gcloud vencida | `gcloud auth login` |
 | Detalhe de erro do SSH | Túnel IAP | veja `.local/gcp/ssh/iap.log` (um erro ao **fechar** o túnel no Windows é normal) |
-| Ansible pede pacote e falha no banco | NAT desligado | `nat ligar`, `preparar`, `nat desligar` |
+| Ansible pede pacote e falha no banco | NAT desligado | Pelo GitHub, rode com `extra_packages` ou `update_os=true` (o NAT liga sozinho). Pela máquina: `nat ligar`, `preparar`, `nat desligar` |
 | `Plan` mostra mudança inesperada | Arquivos da seção 0 ausentes | não aplique; chame o responsável |
 
 ## 4. Atualizar e voltar versão
@@ -64,7 +64,9 @@ Confira com `./scripts/pipeline-gcp.sh verificar`.
 | Ver versões | `./scripts/pipeline-gcp.sh versoes` |
 | Voltar versão | `./scripts/pipeline-gcp.sh implantar <versão>` |
 
-Atualizar **não apaga tarefas**. O rollback volta só a aplicação; para os dados, use a seção 5. Pelo GitHub: aba **Actions > GCP > Run workflow**.
+Atualizar **não apaga tarefas**. O rollback volta só a aplicação; para os dados, use a seção 5. Pelo GitHub: aba **Actions > GCP > Run workflow** (parâmetros no [README](../README.md#pipeline-do-pm-04-github-actions)).
+
+A versão automática é o último commit que alterou `frontend/` ou `backend/`: commit só de documentação não troca a versão. Uma tag já publicada é reaproveitada, não reconstruída.
 
 ## 5. Backup e recuperação
 

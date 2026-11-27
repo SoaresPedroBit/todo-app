@@ -227,9 +227,13 @@ ansible_implantar() {
     -e "imagem_frontend=$frontend" -e "imagem_backend=$backend" -e "imagem_banco=${banco:-nenhuma}"
 }
 
+# Versão automática: o último commit que alterou a aplicação (as imagens são
+# construídas só de frontend/ e backend/). Um commit só de documentação não gera
+# imagem nova nem recria contêineres, e reexecutar continua idempotente (Cenário 3).
 versao_atual() {
-  local v
-  v=$(git rev-parse --short=7 HEAD 2>/dev/null || echo semgit)
+  local v commit
+  commit=$(git log -1 --format=%H -- frontend backend 2>/dev/null || true)
+  v=$(git rev-parse --short=7 "${commit:-HEAD}" 2>/dev/null || echo semgit)
   [[ -z $(git status --porcelain -- frontend backend banco-de-dados 2>/dev/null) ]] || v="$v-local$(date +%m%d%H%M)"
   echo "$v"
 }

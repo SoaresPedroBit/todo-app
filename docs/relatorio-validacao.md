@@ -1,7 +1,7 @@
 # Relatório de validação · ToDo App (Google Cloud)
 
 Evidências dos critérios de aceite do [escopo](escopo.md), seção 16.
-**Datas:** 24 e 25/11/2026 (horários em UTC). **Endereço:** https://34-73-148-18.sslip.io
+**Datas:** 24, 25 e 27/11/2026 (horários em UTC). **Endereço:** https://34-73-148-18.sslip.io
 **Código:** [SoaresPedroBit/todo-app](https://github.com/SoaresPedroBit/todo-app), ramo `main`. Os testes de 24/11 usaram versões `4814004-local…`, anteriores ao commit.
 O relatório do ambiente local está em [localstack/relatorio-validacao.md](localstack/relatorio-validacao.md).
 
@@ -143,16 +143,22 @@ A restauração real (`restaurar`) foi executada no projeto temporário (acima),
 3. Dados da organização e responsáveis pelos acessos ([arquitetura.md, seção 8](arquitetura.md#8-limitações-e-premissas)).
 4. Conferir o faturamento real e fazer o encerramento depois da feira.
 5. Sem teste de carga; a margem de memória das VMs é pequena.
-6. Criação do zero (Cenário 1) **pelo GitHub**: exige `desativar` antes (os dados e a URL mudam); fica para depois da feira.
+6. Criação do zero (Cenário 1) **pelo GitHub**: exige um projeto vazio. No projeto da feira, `desativar` mudaria a URL já divulgada e apagaria os dados; por isso o Cenário 1 é demonstrado em projeto separado. A mesma rotina já criou o ambiente da feira do zero (24/11) e repetiu o ciclo completo em projeto temporário (25/11, acima).
+7. `update_os=true` e `extra_packages` ainda não foram executados pelo GitHub: rodar um Cenário 2 com `extra_packages=htop`, seguido do Cenário 3 com os mesmos parâmetros, antes da apresentação.
 
-## Cenário 2: troca do tipo das VMs pelo GitHub (27/11)
+## Cenários do PM-04 pelo GitHub
 
-| Execução | Mudança | Resultado | Site fora do ar |
-| --- | --- | --- | --- |
-| [46074246440](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074246440) | `e2-micro` → `e2-small` | 2 VMs alteradas no lugar; Ansible `failed=0`; versão `bacd44f` implantada | cerca de 1,5 min |
-| [46074985970](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074985970) | `e2-small` → `e2-micro` | 2 VMs alteradas no lugar; Ansible `changed=0` nas duas | cerca de 2 min |
+Todas com `acao = provisionar_e_implantar`, `environment = dev` e `instance_name = todo-pm04`. Resultados tirados dos registros de cada execução.
 
-O Terraform desliga, troca o tipo e religa cada VM (`allow_stopping_for_update`); disco, IP e dados ficam. Medido com uma consulta ao `/health` a cada 5 s. As tarefas cadastradas foram as mesmas antes e depois.
+| Cenário | Execução | Parâmetros | Terraform | Ansible (`configurar.yml` · `implantar.yml`) |
+| --- | --- | --- | --- | --- |
+| 2 · Atualização | [46074246440](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074246440) | `e2-micro` → `e2-small` | `0 to add, 2 to change, 0 to destroy` (alteração no lugar) | `changed=0` · aplicação `changed=3`: versão nova `bacd44f` implantada |
+| 2 · Volta | [46074985970](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074985970) | `e2-small` → `e2-micro` | `0 to add, 2 to change, 0 to destroy` | `changed=0` · `changed=0` |
+| 3 · Reexecução | [46077818369](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077818369) | `e2-micro`, `docker_tag=025ec50` | `No changes`; `0 added, 0 changed, 0 destroyed` | `changed=0` · `changed=0`, nas duas VMs |
+
+No Cenário 2, o Terraform desliga, troca o tipo e religa cada VM (`allow_stopping_for_update`); disco, IP e dados ficam. Site fora do ar: cerca de 1,5 min na ida e 2 min na volta, medidos com uma consulta ao `/health` a cada 5 s. As tarefas cadastradas foram as mesmas antes e depois.
+
+**Achado na validação:** a execução [46077399897](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077399897), com os mesmos parâmetros e `docker_tag` vazio, recriou os contêineres da aplicação (`changed=3`). O motivo: o commit `025ec50`, só de documentação, mudou a versão automática, que era o SHA do HEAD. **Correção:** a versão automática passou a ser o último commit que alterou `frontend/` ou `backend/`, e a criação do zero desliga o NAT no fim da própria execução, para que a reexecução seguinte não mostre a remoção dele no plano.
 
 ## Implantação pelo Ansible (27/11)
 

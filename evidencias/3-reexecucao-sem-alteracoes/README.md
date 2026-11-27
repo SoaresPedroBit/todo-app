@@ -59,7 +59,9 @@ todo-db                    : ok=20   changed=0    unreachable=0    failed=0    s
 
 ## Por que fixar `docker_tag`
 
-Com `docker_tag` vazio, a versão é o commit atual da `main`. Uma execução anterior ([46077399897](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077399897)) começou logo depois de um commit só de documentação (`025ec50`): o Terraform já mostrou `No changes`, mas o Ansible implantou corretamente a nova versão (`changed=3` na VM da aplicação). Isso é uma atualização legítima, não falta de idempotência. Com a tag fixa, a mesma entrada produz sempre o mesmo ambiente.
+Antes do PR #3, com `docker_tag` vazio, a versão era o commit atual da `main`. Uma execução anterior ([46077399897](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077399897)) começou logo depois de um commit só de documentação (`025ec50`): o Terraform já mostrou `No changes`, mas o Ansible implantou corretamente a nova versão (`changed=3` na VM da aplicação). Isso é uma atualização legítima, não falta de idempotência. Com a tag fixa, a mesma entrada produz sempre o mesmo ambiente.
+
+Desde o PR #3, a versão automática é o último commit que alterou `frontend/` ou `backend/`: um commit só de documentação não gera mais versão nova.
 
 ## Validações anteriores
 

@@ -75,16 +75,31 @@ variable "backup_retention_days" {
   default = 30
 }
 
+# environment e instance_name viram etiquetas das VMs: mudar o valor altera as
+# VMs no lugar, sem recriá-las. Os nomes das VMs (todo-app e todo-db) são fixos,
+# porque trocar o nome de uma VM na GCP obriga a recriá-la (e apagaria a da feira).
 variable "environment" {
-  description = "Ambiente de destino (dev, homolog, prod)"
+  description = "Ambiente de destino (dev, homolog, prod), gravado na etiqueta environment das VMs"
   type        = string
   default     = "dev"
+
+  validation {
+    condition     = contains(["dev", "homolog", "prod"], var.environment)
+    error_message = "Use dev, homolog ou prod."
+  }
 }
 
+# Mesmo padrão da pipeline (.github/workflows/gcp.yml): rodar pela máquina da
+# equipe ou pelo GitHub dá o mesmo plano.
 variable "instance_name" {
-  description = "Prefixo do nome das instâncias"
+  description = "Identificador das VMs, gravado na etiqueta instance_name"
   type        = string
-  default     = "todo"
+  default     = "todo-pm04"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{0,62}$", var.instance_name))
+    error_message = "Use minúsculas, números e hífen, começando por letra (até 63 caracteres)."
+  }
 }
 
 # Cota grátis: as horas de e2-micro somadas até o total de horas do mês (~720 h).
