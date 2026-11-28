@@ -7,7 +7,31 @@
 - **Link:** [46077818369](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077818369) · ✅ sucesso · 2 min 24 s
 - **Data:** 27/11/2026, 22:37 UTC · **Versão no ar:** `025ec50`
 
-## Parâmetros usados
+### Segunda demonstração: entradas idênticas à execução anterior (depois do PR #3)
+
+[46084388336](https://github.com/SoaresPedroBit/todo-app/actions/runs/46084388336) (27/11, 23:47 UTC) repetiu **exatamente** as entradas de [46084051466](https://github.com/SoaresPedroBit/todo-app/actions/runs/46084051466), a execução do [Cenário 2](../2-atualizacao/) que instalou pacotes: `instance_type=e2-micro`, `docker_tag=58e7363`, `update_os=false`, `extra_packages=curl,git,unzip`. Entre as duas houve commits só de documentação, que não mudam a versão das imagens.
+
+```text
+NAT do banco: true (VM do banco: todo-db)
+No changes. Your infrastructure matches the configuration.
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+
+PLAY RECAP (configurar.yml)
+todo-app                   : ok=14   changed=0    unreachable=0    failed=0    skipped=4
+todo-db                    : ok=22   changed=0    unreachable=0    failed=0    skipped=5
+
+  [OK] frontend:58e7363 (já publicada)
+  [OK] backend:58e7363 (já publicada)
+  [OK] mongo:db-51f5a5f41e (já publicada)
+
+PLAY RECAP (implantar.yml)
+todo-app                   : ok=13   changed=0    unreachable=0    failed=0    skipped=2
+todo-db                    : ok=20   changed=0    unreachable=0    failed=0    skipped=2
+
+  [OK] Versão 58e7363 no ar em https://34-73-148-18.sslip.io
+```
+
+## Parâmetros usados (primeira demonstração)
 
 Os mesmos do ambiente em execução, com a versão das imagens fixada explicitamente (recomendação do PM-04 de usar tags reproduzíveis):
 

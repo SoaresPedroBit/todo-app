@@ -9,8 +9,8 @@ Cada pasta corresponde a um cenário e traz os parâmetros usados, o link da exe
 | Cenário do PM-04 | Pasta | Execução no GitHub Actions | Situação |
 | --- | --- | --- | --- |
 | 1 · Criação inicial | [1-criacao-inicial](1-criacao-inicial/) | Mesma rotina, em projeto temporário (25/11): 26 recursos | ✅ validado · ⏳ pelo GitHub após a feira |
-| 2 · Atualização do ambiente | [2-atualizacao](2-atualizacao/) | [46074246440](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074246440) | ✅ `e2-micro → e2-small` sem recriar; imagem `bacd44f` |
-| 3 · Reexecução sem alterações | [3-reexecucao-sem-alteracoes](3-reexecucao-sem-alteracoes/) | [46077818369](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077818369) | ✅ `No changes`; Ansible `changed=0` |
+| 2 · Atualização do ambiente | [2-atualizacao](2-atualizacao/) | [46074246440](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074246440) · [46083527513](https://github.com/SoaresPedroBit/todo-app/actions/runs/46083527513) · [46084051466](https://github.com/SoaresPedroBit/todo-app/actions/runs/46084051466) | ✅ `e2-micro → e2-small` sem recriar; NAT criado; imagem `58e7363`; pacotes `curl,git,unzip` instalados (`changed=1` nas duas VMs) |
+| 3 · Reexecução sem alterações | [3-reexecucao-sem-alteracoes](3-reexecucao-sem-alteracoes/) | [46077818369](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077818369) · [46084388336](https://github.com/SoaresPedroBit/todo-app/actions/runs/46084388336) | ✅ `No changes`; Ansible `changed=0`, com entradas idênticas às da execução anterior |
 | Validação da demanda | [4-validacao-demanda](4-validacao-demanda/) | [aceite 45704640419](https://github.com/SoaresPedroBit/todo-app/actions/runs/45704640419) | ✅ |
 | Demais execuções (CI, LocalStack, rollback…) | [5-outras-execucoes](5-outras-execucoes/) | várias | ✅ |
 

@@ -144,7 +144,7 @@ A restauração real (`restaurar`) foi executada no projeto temporário (acima),
 4. Conferir o faturamento real e fazer o encerramento depois da feira.
 5. Sem teste de carga; a margem de memória das VMs é pequena.
 6. Criação do zero (Cenário 1) **pelo GitHub**: exige um projeto vazio. No projeto da feira, `desativar` mudaria a URL já divulgada e apagaria os dados; por isso o Cenário 1 é demonstrado em projeto separado. A mesma rotina já criou o ambiente da feira do zero (24/11) e repetiu o ciclo completo em projeto temporário (25/11, acima).
-7. `update_os=true` e `extra_packages` ainda não foram executados pelo GitHub: rodar um Cenário 2 com `extra_packages=htop`, seguido do Cenário 3 com os mesmos parâmetros, antes da apresentação.
+7. `update_os=true` (aplicar as atualizações do SO) não foi executado no ambiente da feira: a VM do banco tem atualização de kernel pendente, que exige reiniciá-la. `extra_packages` foi executado em 27/11 (abaixo).
 
 ## Cenários do PM-04 pelo GitHub
 
@@ -155,6 +155,12 @@ Todas com `acao = provisionar_e_implantar`, `environment = dev` e `instance_name
 | 2 · Atualização | [46074246440](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074246440) | `e2-micro` → `e2-small` | `0 to add, 2 to change, 0 to destroy` (alteração no lugar) | `changed=0` · aplicação `changed=3`: versão nova `bacd44f` implantada |
 | 2 · Volta | [46074985970](https://github.com/SoaresPedroBit/todo-app/actions/runs/46074985970) | `e2-small` → `e2-micro` | `0 to add, 2 to change, 0 to destroy` | `changed=0` · `changed=0` |
 | 3 · Reexecução | [46077818369](https://github.com/SoaresPedroBit/todo-app/actions/runs/46077818369) | `e2-micro`, `docker_tag=025ec50` | `No changes`; `0 added, 0 changed, 0 destroyed` | `changed=0` · `changed=0`, nas duas VMs |
+| 2 · Pacotes e imagem | [46083527513](https://github.com/SoaresPedroBit/todo-app/actions/runs/46083527513) | `extra_packages=htop`, `docker_tag` vazio | NAT criado: `2 to add`; `2 added` | `changed=0` (`htop` já vem no Ubuntu) · aplicação `changed=5`: versão `58e7363` |
+| 2 · Pacotes | [46084051466](https://github.com/SoaresPedroBit/todo-app/actions/runs/46084051466) | `extra_packages=curl,git,unzip`, `docker_tag=58e7363` | `No changes` | **`changed=1` nas duas VMs** (pacotes instalados; no banco, pelo NAT) · `changed=0` |
+| 3 · Reexecução | [46084388336](https://github.com/SoaresPedroBit/todo-app/actions/runs/46084388336) | Idênticos aos da 46084051466 | `No changes`; `0 added, 0 changed, 0 destroyed` | `changed=0` · `changed=0`, nas duas VMs |
+| Volta ao normal | [46084658210](https://github.com/SoaresPedroBit/todo-app/actions/runs/46084658210) | Sem `extra_packages` | NAT removido: `2 to destroy`; `2 destroyed` | `changed=0` · `changed=0` |
+
+Nas quatro execuções do fim de 27/11 (23:37 a 23:54 UTC), uma consulta ao `/health` a cada 5 s teve uma única falha: um 502 às 23:41:32, na troca dos contêineres da aplicação. Essas execuções também mostram a correção do achado abaixo: os commits só de documentação feitos entre elas não mudaram a versão automática (`58e7363`).
 
 No Cenário 2, o Terraform desliga, troca o tipo e religa cada VM (`allow_stopping_for_update`); disco, IP e dados ficam. Site fora do ar: cerca de 1,5 min na ida e 2 min na volta, medidos com uma consulta ao `/health` a cada 5 s. As tarefas cadastradas foram as mesmas antes e depois.
 
